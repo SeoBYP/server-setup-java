@@ -150,3 +150,5 @@ sequenceDiagram
     API->>DataPlatform: 주문 이벤트 전송(Mock)
     API-->>User: 주문 완료 응답
 ```
+
+
