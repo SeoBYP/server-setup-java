@@ -151,4 +151,54 @@ sequenceDiagram
     API-->>User: 주문 완료 응답
 ```
 
+# 🗄️ ERD 설계
 
+## 📌 개요
+본 프로젝트는 e-커머스 주문 서비스의 **정합성, 동시성, 멱등성**을 모두 고려한 데이터베이스 설계를 기반으로 합니다.  
+다중 인스턴스 환경에서도 재고/포인트/쿠폰의 무결성을 유지하며, Outbox 패턴을 통해 외부 데이터 플랫폼과의 **데이터 일관성**을 보장합니다.
+
+> 🔗 ERD Cloud Diagram: [ERD Cloud 바로가기](https://www.erdcloud.com/p/BNbziboLiCBswccSH)
+
+![ERD Diagram](docs/assets/erd_diagram.png)
+
+---
+
+### 🧱 테이블 구조 요약
+
+| 테이블명 | 주요 컬럼 요약 | 핵심 제약 / 인덱스 | 설명 |
+|-----------|----------------|--------------------|------|
+| **users** | `user_id`, `name`, `created_at` | PK(`user_id`) | 사용자 기본 정보 |
+| **wallets** | `user_id`, `balance` | PK(`user_id`), FK→`users`, `CHECK(balance ≥ 0)` | 사용자 포인트 잔액 관리 |
+| **orders** | `order_id`, `user_id`, `status`, `total_amount`, `discount_amount`, `paid_amount`, `idempotency_key`, `user_coupon_id`, `created_at` | `UNIQUE(idempotency_key)`<br>`FK(user_coupon_id → user_coupons.id)`<br>`INDEX(status, created_at)`<br>`INDEX(user_id, created_at)` | 주문 / 결제 단위 데이터. 멱등키로 중복 요청 방지 |
+| **order_items** | `order_item_id`, `order_id`, `product_id`, `unit_price`, `quantity`, `subtotal` | `UNIQUE(order_id, product_id)`<br>`CHECK(quantity > 0)`<br>`CHECK(unit_price ≥ 0)`<br>`CHECK(subtotal ≥ 0)` | 주문 상세 품목. 같은 상품 중복 삽입 방지 |
+| **payments** | `payment_id`, `order_id`, `amount`, `status`, `paid_at` | `UNIQUE(order_id)`<br>`ENUM('SUCCESS','FAILED')` | 주문 1건당 결제 1회 보장 |
+| **products** | `id`, `name`, `price`, `stock`, `created_at` | PK(`id`), `CHECK(stock ≥ 0)` | 상품 기본 정보 / 재고 관리 |
+| **coupons** | `coupon_id`, `code`, `type`, `value`, `starts_at`, `ends_at`, `created_at` | `UNIQUE(code)`<br>`ENUM('PERCENT','FIXED')` | 쿠폰 정의 테이블 (선착순 발급 기준) |
+| **user_coupons** | `id`, `user_id`, `coupon_id`, `status`, `claimed_at`, `used_at` | `UNIQUE(user_id, coupon_id)`<br>`INDEX(user_id, status)` | 사용자별 쿠폰 보유/사용 내역 |
+| **point_ledger** | `id`, `user_id`, `order_id`, `delta`, `reason`, `created_at` | PK(`id`), `ENUM('CHARGE','ORDER')` | 포인트 증감 로그. 결제 시 차감, 충전 시 증가 기록 |
+| **outbox** | `id`, `aggregate_type`, `aggregate_id`, `payload`, `status`, `created_at` | `INDEX(status, id)`<br>`ENUM('PENDING','SENT','FAILED')` | 외부 데이터 플랫폼 전송 보장용 이벤트 로그 |
+
+---
+
+### 💡 설계 포인트
+
+| 구분 | 설명 |
+|------|------|
+| **정합성 보장** | `FOR UPDATE` 트랜잭션으로 Wallet / Product 재고를 안전하게 잠금 |
+| **멱등성 (Idempotency)** | `orders.idempotency_key UNIQUE` 로 중복 주문 생성 방지 |
+| **데이터 추적성** | Coupon → UserCoupon → Order 흐름으로 쿠폰 사용 내역 추적 가능 |
+| **무결성 제약** | CHECK, UNIQUE, FK로 음수/중복/고아 데이터 방지 |
+| **Outbox 패턴** | 주문 커밋과 외부 전송(데이터 플랫폼 연동)을 원자적으로 분리 |
+| **조회 성능** | `status`, `user_id`, `created_at` 기반 인덱스로 통계/이력 조회 최적화 |
+
+---
+
+### 🧩 ERD 특징 요약
+
+- **트랜잭션 중심 처리:** Wallet + Product + Order를 한 트랜잭션으로 묶어 동시성 문제 방지
+- **재고 및 포인트 정합성:** DB 단에서만 관리하며 비즈니스 레벨 Lock 불필요
+- **Outbox 기반 확장성:** 데이터 분석 플랫폼 등 외부 시스템 연계에 안전
+- **정규화 완료:** 데이터 중복 최소화, 인덱스 효율 극대화
+- **확장 가능:** 주문, 쿠폰, 포인트 기능을 독립적으로 확장 가능
+
+---
