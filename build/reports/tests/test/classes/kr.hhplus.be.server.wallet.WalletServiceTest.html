@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+<meta http-equiv="x-ua-compatible" content="IE=edge"/>
+<title>Test results - WalletServiceTest</title>
+<link href="../css/base-style.css" rel="stylesheet" type="text/css"/>
+<link href="../css/style.css" rel="stylesheet" type="text/css"/>
+<script src="../js/report.js" type="text/javascript"></script>
+</head>
+<body>
+<div id="content">
+<h1>WalletServiceTest</h1>
+<div class="breadcrumbs">
+<a href="../index.html">all</a> &gt; 
+<a href="../packages/kr.hhplus.be.server.wallet.html">kr.hhplus.be.server.wallet</a> &gt; WalletServiceTest</div>
+<div id="summary">
+<table>
+<tr>
+<td>
+<div class="summaryGroup">
+<table>
+<tr>
+<td>
+<div class="infoBox" id="tests">
+<div class="counter">11</div>
+<p>tests</p>
+</div>
+</td>
+<td>
+<div class="infoBox" id="failures">
+<div class="counter">0</div>
+<p>failures</p>
+</div>
+</td>
+<td>
+<div class="infoBox" id="ignored">
+<div class="counter">0</div>
+<p>ignored</p>
+</div>
+</td>
+<td>
+<div class="infoBox" id="duration">
+<div class="counter">0.777s</div>
+<p>duration</p>
+</div>
+</td>
+</tr>
+</table>
+</div>
+</td>
+<td>
+<div class="infoBox success" id="successRate">
+<div class="percent">100%</div>
+<p>successful</p>
+</div>
+</td>
+</tr>
+</table>
+</div>
+<div id="tabs">
+<ul class="tabLinks">
+<li>
+<a href="#tab0">Tests</a>
+</li>
+<li>
+<a href="#tab1">Standard output</a>
+</li>
+</ul>
+<div id="tab0" class="tab">
+<h2>Tests</h2>
+<table>
+<thead>
+<tr>
+<th>Test</th>
+<th>Method name</th>
+<th>Duration</th>
+<th>Result</th>
+</tr>
+</thead>
+<tr>
+<td class="success">null 금액 출금 시도 - 예외 발생</td>
+<td class="success">NULL_금액_출금_시도_에러발생()</td>
+<td class="success">0.011s</td>
+<td class="success">passed</td>
+</tr>
+<tr>
+<td class="success">NULL 충전 시도 - 예외 발생</td>
+<td class="success">NULL_충전_예외발생()</td>
+<td class="success">0.016s</td>
+<td class="success">passed</td>
+</tr>
+<tr>
+<td class="success">NULL 초기 잔액 - 0으로 생성</td>
+<td class="success">기본_잔액_0_으로_생성_성공()</td>
+<td class="success">0.013s</td>
+<td class="success">passed</td>
+</tr>
+<tr>
+<td class="success">소수점 단위 정상 충전 - 잔액이 증가한다</td>
+<td class="success">소수점_단위_충전_성공시_잔액증가()</td>
+<td class="success">0.011s</td>
+<td class="success">passed</td>
+</tr>
+<tr>
+<td class="success">음수 금액 출금 시도 - 예외 발생</td>
+<td class="success">음수_금액_출금_에러발생()</td>
+<td class="success">0.013s</td>
+<td class="success">passed</td>
+</tr>
+<tr>
+<td class="success">음수 충전 시도 - 예외 발생</td>
+<td class="success">음수_충전시_예외발생()</td>
+<td class="success">0.012s</td>
+<td class="success">passed</td>
+</tr>
+<tr>
+<td class="success">잔액 부족 - InsufficientBalanceException 발생</td>
+<td class="success">잔액_부족_에러발생()</td>
+<td class="success">0.095s</td>
+<td class="success">passed</td>
+</tr>
+<tr>
+<td class="success">전액 출금시 잔액이 0이된다.</td>
+<td class="success">전액_출금시_잔액이_0이된다()</td>
+<td class="success">0.012s</td>
+<td class="success">passed</td>
+</tr>
+<tr>
+<td class="success">초기 잔액 생성 테스트</td>
+<td class="success">초기_잔액_생성_성공()</td>
+<td class="success">0.006s</td>
+<td class="success">passed</td>
+</tr>
+<tr>
+<td class="success">출금 성공시 잔액 감소</td>
+<td class="success">출금_성공시_잔액_감소()</td>
+<td class="success">0.011s</td>
+<td class="success">passed</td>
+</tr>
+<tr>
+<td class="success">정상 충전 - 잔액이 증가한다</td>
+<td class="success">충전_성공시_잔액증가()</td>
+<td class="success">0.577s</td>
+<td class="success">passed</td>
+</tr>
+</table>
+</div>
+<div id="tab1" class="tab">
+<h2>Standard output</h2>
+<span class="code">
+<pre>16:20:37.075 [Test worker] INFO org.springframework.test.context.support.AnnotationConfigContextLoaderUtils -- Could not detect default configuration classes for test class [kr.hhplus.be.server.wallet.WalletServiceTest]: WalletServiceTest does not declare any static, non-private, non-final, nested classes annotated with @Configuration.
+16:20:37.193 [Test worker] INFO org.springframework.boot.test.context.SpringBootTestContextBootstrapper -- Found @SpringBootConfiguration kr.hhplus.be.server.ServerApplication for test class kr.hhplus.be.server.wallet.WalletServiceTest
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+
+ :: Spring Boot ::                (v3.4.1)
+
+2025-11-18T16:20:37.522Z  INFO 10268 --- [hhplus] [    Test worker] k.h.be.server.wallet.WalletServiceTest   : Starting WalletServiceTest using Java 17.0.14 with PID 10268 (started by user in C:\Users\user\Github\server-setup-java)
+2025-11-18T16:20:37.523Z  INFO 10268 --- [hhplus] [    Test worker] k.h.be.server.wallet.WalletServiceTest   : The following 1 profile is active: &quot;local&quot;
+2025-11-18T16:20:37.957Z  INFO 10268 --- [hhplus] [    Test worker] .s.d.r.c.RepositoryConfigurationDelegate : Bootstrapping Spring Data JPA repositories in DEFAULT mode.
+2025-11-18T16:20:37.967Z  INFO 10268 --- [hhplus] [    Test worker] .s.d.r.c.RepositoryConfigurationDelegate : Finished Spring Data repository scanning in 4 ms. Found 0 JPA repository interfaces.
+2025-11-18T16:20:37.970Z  INFO 10268 --- [hhplus] [    Test worker] .s.d.r.c.RepositoryConfigurationDelegate : Bootstrapping Spring Data JPA repositories in DEFAULT mode.
+2025-11-18T16:20:37.999Z  INFO 10268 --- [hhplus] [    Test worker] .s.d.r.c.RepositoryConfigurationDelegate : Finished Spring Data repository scanning in 29 ms. Found 1 JPA repository interface.
+2025-11-18T16:20:38.355Z  INFO 10268 --- [hhplus] [    Test worker] org.testcontainers.images.PullPolicy     : Image pull policy will be performed by: DefaultPullPolicy()
+2025-11-18T16:20:38.357Z  INFO 10268 --- [hhplus] [    Test worker] o.t.utility.ImageNameSubstitutor         : Image name substitution will be performed by: DefaultImageNameSubstitutor (composite of 'ConfigurationFileImageNameSubstitutor' and 'PrefixingImageNameSubstitutor')
+2025-11-18T16:20:38.362Z  INFO 10268 --- [hhplus] [    Test worker] org.testcontainers.DockerClientFactory   : Testcontainers version: 1.20.4
+2025-11-18T16:20:38.474Z  INFO 10268 --- [hhplus] [    Test worker] o.t.d.DockerClientProviderStrategy       : Loaded org.testcontainers.dockerclient.NpipeSocketClientProviderStrategy from ~/.testcontainers.properties, will try it first
+2025-11-18T16:20:38.662Z  INFO 10268 --- [hhplus] [    Test worker] o.t.d.DockerClientProviderStrategy       : Found Docker environment with local Npipe socket (npipe:////./pipe/docker_engine)
+2025-11-18T16:20:38.663Z  INFO 10268 --- [hhplus] [    Test worker] org.testcontainers.DockerClientFactory   : Docker host IP address is localhost
+2025-11-18T16:20:38.675Z  INFO 10268 --- [hhplus] [    Test worker] org.testcontainers.DockerClientFactory   : Connected to docker: 
+  Server Version: 27.4.0
+  API Version: 1.47
+  Operating System: Docker Desktop
+  Total Memory: 15542 MB
+  Labels: 
+    com.docker.desktop.address=npipe://\\.\pipe\docker_cli
+2025-11-18T16:20:38.733Z  INFO 10268 --- [hhplus] [    Test worker] tc.testcontainers/ryuk:0.11.0            : Creating container for image: testcontainers/ryuk:0.11.0
+2025-11-18T16:20:38.808Z  INFO 10268 --- [hhplus] [    Test worker] o.t.utility.RegistryAuthLocator          : Credential helper/store (docker-credential-desktop) does not have credentials for https://index.docker.io/v1/
+2025-11-18T16:20:38.909Z  INFO 10268 --- [hhplus] [    Test worker] tc.testcontainers/ryuk:0.11.0            : Container testcontainers/ryuk:0.11.0 is starting: 507650eaa0c9620d75eb02eba636ba897bad795427922d0171a59f9b4c91a4e7
+2025-11-18T16:20:39.283Z  INFO 10268 --- [hhplus] [    Test worker] tc.testcontainers/ryuk:0.11.0            : Container testcontainers/ryuk:0.11.0 started in PT0.5496986S
+2025-11-18T16:20:39.287Z  INFO 10268 --- [hhplus] [    Test worker] o.t.utility.RyukResourceReaper           : Ryuk started - will monitor and terminate Testcontainers containers on JVM exit
+2025-11-18T16:20:39.287Z  INFO 10268 --- [hhplus] [    Test worker] org.testcontainers.DockerClientFactory   : Checking the system...
+2025-11-18T16:20:39.288Z  INFO 10268 --- [hhplus] [    Test worker] org.testcontainers.DockerClientFactory   : ✔︎ Docker server version should be at least 1.6.0
+2025-11-18T16:20:39.289Z  INFO 10268 --- [hhplus] [    Test worker] tc.mysql:8.0                             : Creating container for image: mysql:8.0
+2025-11-18T16:20:39.374Z  INFO 10268 --- [hhplus] [    Test worker] tc.mysql:8.0                             : Container mysql:8.0 is starting: db82f0d036036a5c4f2f6199a8c182cf8985958ac85d88fcce348b705822cfd5
+2025-11-18T16:20:39.724Z  INFO 10268 --- [hhplus] [    Test worker] tc.mysql:8.0                             : Waiting for database connection to become available at jdbc:mysql://localhost:60393/hhplus using query 'SELECT 1'
+2025-11-18T16:20:49.300Z  INFO 10268 --- [hhplus] [    Test worker] tc.mysql:8.0                             : Container mysql:8.0 started in PT10.0105348S
+2025-11-18T16:20:49.300Z  INFO 10268 --- [hhplus] [    Test worker] tc.mysql:8.0                             : Container is started (JDBC URL: jdbc:mysql://localhost:60393/hhplus)
+2025-11-18T16:20:49.828Z  INFO 10268 --- [hhplus] [    Test worker] o.hibernate.jpa.internal.util.LogHelper  : HHH000204: Processing PersistenceUnitInfo [name: default]
+2025-11-18T16:20:49.923Z  INFO 10268 --- [hhplus] [    Test worker] org.hibernate.Version                    : HHH000412: Hibernate ORM core version 6.6.4.Final
+2025-11-18T16:20:49.948Z  INFO 10268 --- [hhplus] [    Test worker] o.h.c.internal.RegionFactoryInitiator    : HHH000026: Second-level cache disabled
+2025-11-18T16:20:50.146Z  INFO 10268 --- [hhplus] [    Test worker] o.s.o.j.p.SpringPersistenceUnitInfo      : No LoadTimeWeaver setup: ignoring JPA class transformer
+2025-11-18T16:20:50.167Z  INFO 10268 --- [hhplus] [    Test worker] com.zaxxer.hikari.HikariDataSource       : HangHaePlusDataSource - Starting...
+2025-11-18T16:20:50.279Z  INFO 10268 --- [hhplus] [    Test worker] com.zaxxer.hikari.pool.HikariPool        : HangHaePlusDataSource - Added connection com.mysql.cj.jdbc.ConnectionImpl@345d641e
+2025-11-18T16:20:50.281Z  INFO 10268 --- [hhplus] [    Test worker] com.zaxxer.hikari.HikariDataSource       : HangHaePlusDataSource - Start completed.
+2025-11-18T16:20:50.337Z  INFO 10268 --- [hhplus] [    Test worker] org.hibernate.orm.connections.pooling    : HHH10001005: Database info:
+	Database JDBC URL [Connecting through datasource 'HikariDataSource (HangHaePlusDataSource)']
+	Database driver: undefined/unknown
+	Database version: 8.0.44
+	Autocommit mode: undefined/unknown
+	Isolation level: undefined/unknown
+	Minimum pool size: undefined/unknown
+	Maximum pool size: undefined/unknown
+2025-11-18T16:20:50.878Z  INFO 10268 --- [hhplus] [    Test worker] o.h.e.t.j.p.i.JtaPlatformInitiator       : HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
+Hibernate: drop table if exists wallets
+Hibernate: create table wallets (balance decimal(12,2) not null, created_at datetime(6) not null, user_id bigint not null, primary key (user_id)) engine=InnoDB
+2025-11-18T16:20:50.930Z  INFO 10268 --- [hhplus] [    Test worker] j.LocalContainerEntityManagerFactoryBean : Initialized JPA EntityManagerFactory for persistence unit 'default'
+2025-11-18T16:20:51.399Z  INFO 10268 --- [hhplus] [    Test worker] o.s.d.j.r.query.QueryEnhancerFactory     : Hibernate is in classpath; If applicable, HQL parser will be used.
+2025-11-18T16:20:53.535Z  INFO 10268 --- [hhplus] [    Test worker] o.s.b.a.e.web.EndpointLinksResolver      : Exposing 1 endpoint beneath base path '/actuator'
+2025-11-18T16:20:53.670Z  INFO 10268 --- [hhplus] [    Test worker] k.h.be.server.wallet.WalletServiceTest   : Started WalletServiceTest in 16.375 seconds (process running for 17.241)
+Hibernate: select w1_0.user_id,w1_0.balance,w1_0.created_at from wallets w1_0
+Hibernate: select w1_0.user_id,w1_0.balance,w1_0.created_at from wallets w1_0 where w1_0.user_id=?
+Hibernate: insert into wallets (balance,created_at,user_id) values (?,?,?)
+Hibernate: select w1_0.user_id,w1_0.balance,w1_0.created_at from wallets w1_0 where w1_0.user_id=? for update
+Hibernate: select w1_0.user_id,w1_0.balance,w1_0.created_at from wallets w1_0
+Hibernate: select w1_0.user_id,w1_0.balance,w1_0.created_at from wallets w1_0 where w1_0.user_id=?
+Hibernate: insert into wallets (balance,created_at,user_id) values (?,?,?)
+Hibernate: select w1_0.user_id,w1_0.balance,w1_0.created_at from wallets w1_0 where w1_0.user_id=? for update
+Hibernate: select w1_0.user_id,w1_0.balance,w1_0.created_at from wallets w1_0
+Hibernate: select w1_0.user_id,w1_0.balance,w1_0.created_at from wallets w1_0 where w1_0.user_id=?
+Hibernate: insert into wallets (balance,created_at,user_id) values (?,?,?)
+Hibernate: select w1_0.user_id,w1_0.balance,w1_0.created_at from wallets w1_0 where w1_0.user_id=? for update
+Hibernate: select w1_0.user_id,w1_0.balance,w1_0.created_at from wallets w1_0
+Hibernate: select w1_0.user_id,w1_0.balance,w1_0.created_at from wallets w1_0 where w1_0.user_id=?
+Hibernate: insert into wallets (balance,created_at,user_id) values (?,?,?)
+Hibernate: select w1_0.user_id,w1_0.balance,w1_0.created_at from wallets w1_0 where w1_0.user_id=? for update
+Hibernate: select w1_0.user_id,w1_0.balance,w1_0.created_at from wallets w1_0
+Hibernate: select w1_0.user_id,w1_0.balance,w1_0.created_at from wallets w1_0 where w1_0.user_id=?
+Hibernate: insert into wallets (balance,created_at,user_id) values (?,?,?)
+Hibernate: select w1_0.user_id,w1_0.balance,w1_0.created_at from wallets w1_0 where w1_0.user_id=? for update
+Hibernate: select w1_0.user_id,w1_0.balance,w1_0.created_at from wallets w1_0
+Hibernate: select w1_0.user_id,w1_0.balance,w1_0.created_at from wallets w1_0 where w1_0.user_id=?
+Hibernate: insert into wallets (balance,created_at,user_id) values (?,?,?)
+Hibernate: select w1_0.user_id,w1_0.balance,w1_0.created_at from wallets w1_0 where w1_0.user_id=? for update
+Hibernate: select w1_0.user_id,w1_0.balance,w1_0.created_at from wallets w1_0
+Hibernate: select w1_0.user_id,w1_0.balance,w1_0.created_at from wallets w1_0 where w1_0.user_id=?
+Hibernate: insert into wallets (balance,created_at,user_id) values (?,?,?)
+Hibernate: select w1_0.user_id,w1_0.balance,w1_0.created_at from wallets w1_0 where w1_0.user_id=? for update
+Hibernate: select w1_0.user_id,w1_0.balance,w1_0.created_at from wallets w1_0
+Hibernate: select w1_0.user_id,w1_0.balance,w1_0.created_at from wallets w1_0 where w1_0.user_id=?
+Hibernate: insert into wallets (balance,created_at,user_id) values (?,?,?)
+Hibernate: select w1_0.user_id,w1_0.balance,w1_0.created_at from wallets w1_0 where w1_0.user_id=? for update
+Hibernate: select w1_0.user_id,w1_0.balance,w1_0.created_at from wallets w1_0
+Hibernate: select w1_0.user_id,w1_0.balance,w1_0.created_at from wallets w1_0 where w1_0.user_id=?
+Hibernate: insert into wallets (balance,created_at,user_id) values (?,?,?)
+Hibernate: select w1_0.user_id,w1_0.balance,w1_0.created_at from wallets w1_0 where w1_0.user_id=? for update
+Hibernate: select w1_0.user_id,w1_0.balance,w1_0.created_at from wallets w1_0
+Hibernate: select w1_0.user_id,w1_0.balance,w1_0.created_at from wallets w1_0
+</pre>
+</span>
+</div>
+</div>
+<div id="footer">
+<p>
+<div>
+<label class="hidden" id="label-for-line-wrapping-toggle" for="line-wrapping-toggle">Wrap lines
+<input id="line-wrapping-toggle" type="checkbox" autocomplete="off"/>
+</label>
+</div>Generated by 
+<a href="http://www.gradle.org">Gradle 8.11.1</a> at 2025. 11. 19. 오전 1:20:55</p>
+</div>
+</div>
+</body>
+</html>

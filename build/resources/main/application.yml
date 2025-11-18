@@ -3,7 +3,6 @@ spring:
     name: hhplus
   profiles:
     active: local
-
   datasource:
     name: HangHaePlusDataSource
     type: com.zaxxer.hikari.HikariDataSource
