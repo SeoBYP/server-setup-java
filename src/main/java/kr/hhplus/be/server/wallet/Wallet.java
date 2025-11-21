@@ -52,7 +52,8 @@ public class Wallet {
     {
         if(amount == null || amount.signum() <= 0)
             throw new IllegalArgumentException("amount>0");
-        if (this.balance.compareTo(amount) < 0) throw new InsufficientBalanceException();
+        if (this.balance.compareTo(amount) < 0)
+            throw new InsufficientBalanceException();
         this.balance = this.balance.subtract(amount);
     }
 
