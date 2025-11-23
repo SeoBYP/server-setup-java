@@ -4,6 +4,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 @Service
@@ -24,6 +25,13 @@ public class ProductService {
     {
         return productRepository.findAllById(List.of(productIds));
     }
+
+    @Transactional
+    public List<Product> getProducts(List<Long> productIds)
+    {
+        return productRepository.findAllById(productIds);
+    }
+
 
     @Transactional
     public List<Product> getProducts()
@@ -52,6 +60,7 @@ public class ProductService {
         var product = productRepository.findForUpdate(productId)
                 .orElseThrow(() -> new IllegalArgumentException("PRODUCT_NOT_FOUND"));
         product.debit(amount);
+    
         return productRepository.save(product);
     }
 }
