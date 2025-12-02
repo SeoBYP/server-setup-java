@@ -1,4 +1,4 @@
-package kr.hhplus.be.server.coupon;
+package kr.hhplus.be.server.coupon.exception;
 
 public class CouponAlreadyClaimedException extends RuntimeException {
     public CouponAlreadyClaimedException(String message) {

@@ -1,6 +1,7 @@
 package kr.hhplus.be.server.coupon;
 
 import jakarta.persistence.*;
+import kr.hhplus.be.server.coupon.exception.CouponAlreadyUsedException;
 
 import java.time.LocalDateTime;
 

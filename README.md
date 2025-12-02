@@ -161,7 +161,7 @@ sequenceDiagram
     API-->>User: 주문 완료 응답
 ```
 
-# 🗄️ ERD 설계
+# 🗄️ ERD 설계[OrderItemRequest.java](src/main/java/kr/hhplus/be/server/order/DTO/OrderItemRequest.java)
 
 ## 📌 개요
 

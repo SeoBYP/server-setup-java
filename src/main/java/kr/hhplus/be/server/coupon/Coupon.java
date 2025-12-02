@@ -1,6 +1,8 @@
 package kr.hhplus.be.server.coupon;
 
 import jakarta.persistence.*;
+import kr.hhplus.be.server.coupon.exception.CouponExpiredException;
+import kr.hhplus.be.server.coupon.exception.CouponNotYetAvailableException;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -72,6 +74,27 @@ public class Coupon {
         if (this.endsAt != null && now.isAfter(this.endsAt)) {
             throw new CouponExpiredException("쿠폰 발급 기간이 만료되었습니다. 만료일: " + this.endsAt);
         }
+    }
+
+    public BigDecimal calculateDiscountedAmount(BigDecimal originalAmount) {
+        if (this.type == CouponType.PERCENT) {
+            // 퍼센트 할인 (예: value가 10이면 10% 할인)
+            BigDecimal discountRate = this.value.divide(new BigDecimal("100"), 2, java.math.RoundingMode.HALF_UP);
+            BigDecimal discountAmount = originalAmount.multiply(discountRate);
+
+            // 할인 금액이 원 금액보다 커서 최종 금액이 음수가 되는 것을 방지
+            if (discountAmount.compareTo(originalAmount) > 0) {
+                discountAmount = originalAmount;
+            }
+            return originalAmount.subtract(discountAmount);
+
+        } else if (this.type == CouponType.FIXED) {
+            // 고정 금액 할인
+            BigDecimal discountedAmount = originalAmount.subtract(this.value);
+            // 최종 금액이 0 미만인 경우 0으로 처리
+            return discountedAmount.compareTo(BigDecimal.ZERO) < 0 ? BigDecimal.ZERO : discountedAmount;
+        }
+        return originalAmount; // 쿠폰 타입이 이상하면 원 금액 반환
     }
 
     public Long getCouponId() {

@@ -20,7 +20,7 @@ public class OrderItem {
     private Long productId;
 
     @Column(name = "unit_price", nullable = false)
-    private BigDecimal unit_price;
+    private BigDecimal unitPrice;
 
     @Column(name = "quantity", nullable = false)
     private Integer quantity;
@@ -35,18 +35,21 @@ public class OrderItem {
         this.orderItemId = orderItemId;
         this.order = order;
         this.productId = productId;
-        this.unit_price = unit_price;
+        this.unitPrice = unit_price;
         this.quantity = quantity;
         this.subtotal = subtotal;
     }
 
     public OrderItem(Order order, Long productId, Integer quantity, BigDecimal unit_price) {
         this.order = order;
-
         this.productId = productId;
         this.quantity = quantity;
-        this.unit_price = unit_price;
+        this.unitPrice = unit_price;
         this.subtotal = unit_price.multiply(BigDecimal.valueOf(quantity));
+    }
+
+    public void setOrder(Order order) {
+        this.order = order;
     }
 
     public Long getOrderItemId() {
@@ -61,8 +64,8 @@ public class OrderItem {
         return productId;
     }
 
-    public BigDecimal getUnit_price() {
-        return unit_price;
+    public BigDecimal getUnitPrice() {
+        return unitPrice;
     }
 
     public Integer getQuantity() {

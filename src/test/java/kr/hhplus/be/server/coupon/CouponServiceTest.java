@@ -1,5 +1,9 @@
 package kr.hhplus.be.server.coupon;
 
+import kr.hhplus.be.server.coupon.exception.CouponAlreadyClaimedException;
+import kr.hhplus.be.server.coupon.exception.CouponAlreadyUsedException;
+import kr.hhplus.be.server.coupon.exception.CouponExpiredException;
+import kr.hhplus.be.server.coupon.exception.CouponNotYetAvailableException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
