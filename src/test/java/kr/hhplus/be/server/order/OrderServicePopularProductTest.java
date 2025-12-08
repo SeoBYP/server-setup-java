@@ -17,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -89,7 +90,7 @@ public class OrderServicePopularProductTest {
         BigDecimal expectedFinalBalance = INITIAL_BALANCE.subtract(usedPointer);
 
         // when
-        Order savedOrder = orderService.createOrder(TEST_USER_ID, usedPointer, List.of(orderItemRequest));
+        Order savedOrder = orderService.createOrder(TEST_USER_ID, List.of(orderItemRequest),null, UUID.randomUUID().toString());
 
         // then
         // 1. PopularProduct의 업데이트된 판매 수량 검증

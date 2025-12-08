@@ -86,7 +86,7 @@ public class ProductService {
 
         // 2. 캐시된 ID 리스트를 이용하여 상품 상세 정보만 DB에서 조회
         // findByIdIn()을 통해 단 한 번의 쿼리로 N개의 상품 데이터를 가져옵니다. (N+1 문제 방지)
-        List<Product> products = productRepository.findByIdIn(topProductIds);
+        List<Product> products = productRepository.findByProductIdIn(topProductIds);
 
         // 3. Stream API를 사용하여 Product 엔티티 목록을 ProductResponse DTO 목록으로 변환
         return products.stream()
