@@ -106,4 +106,63 @@ public class CouponConcurrencyTest {
 
         assertEquals(1, userCoupons.size());
     }
+
+    @Test
+    @DisplayName("여러 유저가 동시에 같은 쿠폰을 발급 요청해도 한 명만 성공한다")
+    void 다수_유저_쿠폰_발급_경쟁_테스트() throws Exception {
+        // given
+        int userCount = 10;
+
+        Coupon coupon = new Coupon(
+                "GLOBAL_ONCE",
+                CouponType.FIXED,
+                BigDecimal.valueOf(1000),
+                LocalDateTime.now().minusDays(1),
+                LocalDateTime.now().plusDays(1),
+                LocalDateTime.now()
+        );
+        couponRepository.save(coupon);
+
+        ExecutorService executor = Executors.newFixedThreadPool(userCount);
+        CountDownLatch startLatch = new CountDownLatch(1);
+        CountDownLatch doneLatch = new CountDownLatch(userCount);
+
+        AtomicInteger successCount = new AtomicInteger();
+        AtomicInteger failCount = new AtomicInteger();
+
+        // when: 서로 다른 userId들이 동시에 같은 couponId로 발급 요청
+        for (int i = 0; i < userCount; i++)
+        {
+            final Long userId = (long)(i + 1);
+            executor.submit(() ->{
+                try
+                {
+                    startLatch.await();
+                    couponService.claimCoupon(userId,coupon.getCouponId());
+                    successCount.incrementAndGet();
+                }catch (CouponAlreadyClaimedException e) {
+                    failCount.incrementAndGet();
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    failCount.incrementAndGet();
+                } finally {
+                    doneLatch.countDown();
+                }
+            });
+        }
+        startLatch.countDown();
+        doneLatch.await();
+        executor.shutdown();
+
+        // then
+        // 1) 논리적으로 성공 1번, 실패 9번이어야 한다
+        assertEquals(1, successCount.get());
+        assertEquals(userCount - 1, failCount.get());
+
+        // 2) 실제 DB에도 이 쿠폰에 대한 UserCoupon은 1건만 있어야 한다
+        List<UserCoupon> userCoupons = userCouponRepository.findAll().stream()
+                .filter(uc -> uc.getCouponId().equals(coupon.getCouponId()))
+                .toList();
+        assertEquals(1, userCoupons.size());
+    }
 }

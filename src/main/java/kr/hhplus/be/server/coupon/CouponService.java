@@ -2,6 +2,7 @@ package kr.hhplus.be.server.coupon;
 
 import kr.hhplus.be.server.coupon.exception.*;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,9 +31,15 @@ public class CouponService {
         // 3. 재고 및 기간 체크 (도메인 로직 호출)
         coupon.validateClaimable(); // 기존 로직
 
-        // 4. UserCoupon 생성 및 저장
-        UserCoupon newUserCoupon = new UserCoupon(userId, coupon.getCouponId(), CouponStatus.CLAIMED);
-        return userCouponRepository.save(newUserCoupon);
+        try
+        {
+            // 4. UserCoupon 생성 및 저장
+            UserCoupon newUserCoupon = new UserCoupon(userId, coupon.getCouponId(), CouponStatus.CLAIMED);
+            return userCouponRepository.save(newUserCoupon);
+        }catch (DataIntegrityViolationException e) {
+            // 여기서 걸리는 건 결국 "이 coupon_id로 이미 누가 저장함"
+            throw new CouponAlreadyClaimedException("GLOBAL_ALREADY_CLAIMED");
+        }
     }
 
     @Transactional

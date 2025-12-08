@@ -95,4 +95,55 @@ public class WalletConcurrencyTest {
         var expectedValue = chargeAmount.multiply(BigDecimal.valueOf(threadCount));
         assertTrue(walletService.getBalance(userId).compareTo(expectedValue) == 0);
     }
+
+    @Test
+    @DisplayName("다수 유저가 동시에 지갑 충전 요청 시 각자 정합성이 유지된다")
+    void 다수_유저_지갑_충전_경쟁_테스트() throws Exception {
+        // given
+        Long[] userIds = {1L, 2L, 3L};
+        BigDecimal amount = BigDecimal.valueOf(1000);
+
+        // 1) 각 유저 지갑 0으로 세팅
+        for (Long userId : userIds) {
+            walletRepository.save(new Wallet(userId, BigDecimal.ZERO));
+        }
+
+        int perUserRequests = 10;
+        int threadCount = userIds.length * perUserRequests;
+
+        // 2) 스레드/락 준비
+        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+        CountDownLatch startLatch = new CountDownLatch(1);
+        CountDownLatch doneLatch = new CountDownLatch(threadCount);
+
+        // 3) 각 유저에 대해 perUserRequests 만큼 충전 작업 제출
+        for (Long userId : userIds) {
+            for (int i = 0; i < perUserRequests; i++) {
+                executor.submit(() -> {
+                    try {
+                        startLatch.await();
+                        walletService.charge(userId, amount);
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    } finally {
+                        doneLatch.countDown();
+                    }
+                });
+            }
+        }
+
+        // 동시에 시작
+        startLatch.countDown();
+        doneLatch.await();
+        executor.shutdown();
+
+        // then: 각 유저별 최종 잔액 확인
+        for (Long userId : userIds) {
+            var wallet = walletRepository.findById(userId).get();
+            BigDecimal expected = amount.multiply(BigDecimal.valueOf(perUserRequests));
+            assertTrue(wallet.getBalance().compareTo(expected) == 0);
+        }
+        // 그리고 row 수도 유저 수만큼인지 확인 (유저별 row 하나씩)
+        assertEquals(userIds.length, walletRepository.findAll().size());
+    }
 }

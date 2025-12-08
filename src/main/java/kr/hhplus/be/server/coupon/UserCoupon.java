@@ -17,7 +17,7 @@ public class UserCoupon {
     @Column(name = "user_id", nullable = false)
     private Long userId;
 
-    @Column(name = "coupon_id",nullable = false)
+    @Column(name = "coupon_id",unique = true,nullable = false)
     private Long couponId;
 
     @Column(name = "status",nullable = false)
