@@ -1,10 +1,13 @@
 package kr.hhplus.be.server.order;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import kr.hhplus.be.server.coupon.Coupon;
 import kr.hhplus.be.server.coupon.CouponService;
 import kr.hhplus.be.server.coupon.UserCoupon;
 import kr.hhplus.be.server.order.DTO.OrderItemRequest;
 import kr.hhplus.be.server.order.DTO.OrderRequest;
+import kr.hhplus.be.server.outbox.DTO.OrderCreatedEventPayload;
 import kr.hhplus.be.server.outbox.Outbox;
 import kr.hhplus.be.server.outbox.OutboxRepository;
 import kr.hhplus.be.server.product.Product;
@@ -45,6 +48,8 @@ public class OrderService {
     @Autowired
     private OutboxRepository outboxRepository; // 1. OutboxRepository 주입
 
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
     @Transactional // 단일 트랜잭션으로 원자성 보장
     public Order createOrder(Long userId, List<OrderItemRequest> orderItems, Long userCouponId, String idempotencyKey) {
         // 0. idempotencyKey 중복 검사 (Idempotency 테이블 or Order에 unique 컬럼)
@@ -76,8 +81,6 @@ public class OrderService {
                 productMap.put(productId, product);
             }
 
-            Long usedCouponId = null;
-
             // 3. **쿠폰 사용 로직 추가**
             if (userCouponId != null && userCouponId > 0) {
                 // A. 사용자 쿠폰 유효성 검사 및 락 획득 (UserCouponRepository에 정의된 findForUpdate 사용)
@@ -107,11 +110,6 @@ public class OrderService {
             // 5. 데이터 플랫폼 전송 (트랜잭션 커밋 직전에 실행)
             recordOutboxEvent(savedOrder); // 2. Outbox 기록 메서드 호출
 
-            // 6. 인기 상품 판매량 업데이트 (비동기 배치 대신 실시간 반영을 선택할 경우)
-            orderItems.forEach(item ->
-                    updatePopularProductSales(item.productId(), item.quantity())
-            );
-
             return savedOrder;
         }catch (DataIntegrityViolationException e) {
             // UNIQUE 제약 위반 → 다른 요청이 먼저 처리함
@@ -137,25 +135,28 @@ public class OrderService {
     }
 
     private String generateOrderPayload(Order order) {
-        // 단순화된 JSON 문자열 Mock
-        return String.format("{\"orderId\": %d, \"userId\": %d, \"paidAmount\": %s, \"itemCount\": %d}",
+
+        List<OrderCreatedEventPayload.Item> items =
+                order.getOrderItems().stream()
+                        .map(oi -> new OrderCreatedEventPayload.Item(
+                                oi.getProductId(),
+                                oi.getQuantity()
+                        )).toList();
+
+        OrderCreatedEventPayload payload = new OrderCreatedEventPayload(
                 order.getOrderId(),
                 order.getUserId(),
-                order.getPaidAmount().toString(),
-                order.getOrderItems().size());
+                order.getPaidAmount(),
+                items
+        );
+
+        try {
+            return objectMapper.writeValueAsString(payload);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("ORDER_OUTBOX_PAYLOAD_SERIALIZE_ERROR", e);
+        }
     }
 
-    private void updatePopularProductSales(Long productId, Integer quantity) {
-        // productId로 PopularProduct를 조회하며 비관적 잠금 적용 (findForUpdateByProductId 사용)
-        popularProductRepository.findForUpdateByProductId(productId).ifPresentOrElse(popularProduct -> {
-            popularProduct.addSalesQuantity(quantity);
-            popularProductRepository.save(popularProduct);
-        }, () -> {
-            // 해당 상품이 인기 상품 목록에 없으면 새로 생성하여 추가
-            PopularProduct newPopularProduct = new PopularProduct(productId, quantity);
-            popularProductRepository.save(newPopularProduct);
-        });
-    }
     @Transactional
     public Order getOrder(Long orderId) {
         var order = orderRepository.findById(orderId);

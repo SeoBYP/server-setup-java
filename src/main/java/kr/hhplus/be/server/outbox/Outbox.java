@@ -24,6 +24,9 @@ public class Outbox {
     @Column(name = "status", nullable = false)
     private OutboxStatus status; // PENDING, SENT, FAILED
 
+    @Column(name = "processed", nullable = false)
+    private boolean processed = false; // 인기 상품 집계 여부
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
@@ -56,5 +59,13 @@ public class Outbox {
 
     public void markAsFailed() {
         this.status = OutboxStatus.FAILED;
+    }
+
+    public void markProcessed() {
+        this.processed = true;
+    }
+
+    public boolean isProcessed() {
+        return processed;
     }
 }

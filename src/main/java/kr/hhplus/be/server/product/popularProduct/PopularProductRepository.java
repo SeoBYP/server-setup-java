@@ -12,13 +12,11 @@ import java.util.Optional;
 public interface PopularProductRepository extends JpaRepository<PopularProduct, Long> {
 
     // 기존 메서드 (id로 조회):
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select w from PopularProduct w where w.id = :id")
     Optional<PopularProduct> findForUpdate(@Param("id") Long id);
 
     Optional<PopularProduct> findByProductId(Long productId);
 
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select w from PopularProduct w where w.productId = :productId")
     Optional<PopularProduct> findForUpdateByProductId(@Param("productId") Long productId);
 

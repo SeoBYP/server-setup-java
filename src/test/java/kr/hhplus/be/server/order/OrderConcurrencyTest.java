@@ -138,4 +138,95 @@ public class OrderConcurrencyTest {
         assertEquals(5, p1.getStock());
         assertEquals(5, p2.getStock());
     }
+
+    @Test
+    @DisplayName("여러 유저가 동시에 같은 주문을 발급 요청해도 유효한 주문만 성공한다")
+    void 다수_유저_주문_생성_경쟁_테스트() throws Exception {
+        // given
+        Long productId = 1L;
+        BigDecimal price = BigDecimal.valueOf(100);
+        int initialStock = 10;
+        int perUserQuantity = 2;
+
+        // 상품 1개 (재고 10개)
+        Product product = new Product(productId, "CONC_PRODUCT", price, initialStock);
+        productRepository.save(product);
+
+        int userCount = 10;
+        BigDecimal initialBalance = BigDecimal.valueOf(10_000);
+
+        // 유저 10명 지갑 세팅
+        for (long userId = 1L; userId <= userCount; userId++) {
+            walletRepository.save(new Wallet(userId, initialBalance));
+        }
+
+        ExecutorService executor = Executors.newFixedThreadPool(userCount);
+        CountDownLatch startLatch = new CountDownLatch(1);
+        CountDownLatch doneLatch = new CountDownLatch(userCount);
+
+        AtomicInteger successCount = new AtomicInteger();
+        AtomicInteger failCount = new AtomicInteger();
+        // 어떤 유저가 성공했는지 확인용
+        List<Long> successUserIds = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+        // when: 각 유저가 동시에 같은 상품 2개 주문 시도
+        for (long userId = 1L; userId <= userCount; userId++) {
+            final Long uid = userId;
+            String idempotencyKey = UUID.randomUUID().toString(); // 각 요청은 서로 다른 키
+            executor.submit(() -> {
+                try {
+                    startLatch.await();
+
+                    List<OrderItemRequest> items =
+                            List.of(new OrderItemRequest(productId, perUserQuantity));
+
+                    orderService.createOrder(uid, items, null, idempotencyKey);
+                    successCount.incrementAndGet();
+                    successUserIds.add(uid);
+
+                } catch (InsufficientStockException e) {
+                    failCount.incrementAndGet();
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    failCount.incrementAndGet();
+                } finally {
+                    doneLatch.countDown();
+                }
+            });
+        }
+
+        startLatch.countDown();
+        doneLatch.await();
+        executor.shutdown();
+
+        // then
+        int expectedSuccess = initialStock / perUserQuantity; // 10 / 2 = 5
+        assertEquals(expectedSuccess, successCount.get());
+        assertEquals(userCount - expectedSuccess, failCount.get());
+
+        // 1) 실제 DB에 생성된 주문 수
+        var orders = orderRepository.findAll();
+        assertEquals(expectedSuccess, orders.size());
+
+        // 2) 상품 재고는 0이어야 함
+        var updatedProduct = productRepository.findById(productId).get();
+        assertEquals(0, updatedProduct.getStock());
+
+        // 3) 성공한 유저들의 지갑은 2 * price 만큼 차감, 실패한 유저들은 그대로
+        BigDecimal expectedPaid = price.multiply(BigDecimal.valueOf(perUserQuantity)); // 100 * 2 = 200
+
+        for (long userId = 1L; userId <= userCount; userId++) {
+            var wallet = walletRepository.findById(userId).get();
+            if (successUserIds.contains(userId)) {
+                // 성공한 유저
+                BigDecimal expected = initialBalance.subtract(expectedPaid);
+                assertTrue(wallet.getBalance().compareTo(expected) == 0,
+                        "userId=" + userId + " balance mismatch");
+            } else {
+                // 실패한 유저
+                assertTrue(wallet.getBalance().compareTo(initialBalance) == 0,
+                        "userId=" + userId + " should not be charged");
+            }
+        }
+    }
 }
