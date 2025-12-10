@@ -8,4 +8,10 @@ public interface OutboxRepository extends JpaRepository<Outbox, Long> {
 
     // Worker가 처리할 PENDING 상태의 이벤트를 조회
     List<Outbox> findTop100ByStatusOrderByCreatedAtAsc(Outbox.OutboxStatus status);
+
+    // 인기 상품 집계용: ORDER 타입 + processed=false + status=PENDING
+    List<Outbox> findTop100ByAggregateTypeAndStatusAndProcessedFalseOrderByCreatedAtAsc(
+            String aggregateType,
+            Outbox.OutboxStatus status
+    );
 }

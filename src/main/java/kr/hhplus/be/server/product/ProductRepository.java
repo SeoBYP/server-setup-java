@@ -14,5 +14,5 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     @Query("select w from Product w where w.productId = :productId")
     Optional<Product> findForUpdate(@Param("productId") Long productId);
 
-    List<Product> findByIdIn(List<Long> productIds);
+    List<Product> findByProductIdIn(List<Long> productIds);
 }

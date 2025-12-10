@@ -37,7 +37,7 @@ public class Order {
     @Column(name = "paid_amount")
     private BigDecimal paidAmount;
 
-    @Column(name = "idempotency_key")
+    @Column(unique = true, name = "idempotency_key",nullable = false)
     private String idempotencyKey;
 
     @Column(name = "user_coupon_id")
@@ -70,12 +70,13 @@ public class Order {
         this.createdAt = LocalDateTime.now();
     }
 
-    public Order(Long userId, BigDecimal totalAmount, List<OrderItemRequest> itemRequests, Map<Long, Product> productMap) {
+    public Order(Long userId, BigDecimal totalAmount, List<OrderItemRequest> itemRequests, Map<Long, Product> productMap, String idempotencyKey) {
         this.userId = userId;
         this.status = OrderStatus.ORDERED;
         this.totalAmount = totalAmount;
         this.paidAmount = totalAmount; // 단순 결제는 totalAmount와 동일하다고 가정
         this.createdAt = LocalDateTime.now();
+        this.idempotencyKey = idempotencyKey;
 
         // 주문 항목 리스트 생성 및 양방향 연관 관계 설정
         List<OrderItem> createdOrderItems = itemRequests.stream()

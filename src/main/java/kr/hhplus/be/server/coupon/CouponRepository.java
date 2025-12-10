@@ -9,7 +9,7 @@ import org.springframework.data.repository.query.Param;
 import java.util.Optional;
 
 public interface CouponRepository extends JpaRepository<Coupon, Long> {
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
+
     @Query("select w from Coupon w where w.couponId = :couponId")
     Optional<Coupon> findForUpdate(@Param("couponId") Long couponId);
 

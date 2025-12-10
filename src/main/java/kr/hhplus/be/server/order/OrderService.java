@@ -1,10 +1,13 @@
 package kr.hhplus.be.server.order;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import kr.hhplus.be.server.coupon.Coupon;
 import kr.hhplus.be.server.coupon.CouponService;
 import kr.hhplus.be.server.coupon.UserCoupon;
 import kr.hhplus.be.server.order.DTO.OrderItemRequest;
 import kr.hhplus.be.server.order.DTO.OrderRequest;
+import kr.hhplus.be.server.outbox.DTO.OrderCreatedEventPayload;
 import kr.hhplus.be.server.outbox.Outbox;
 import kr.hhplus.be.server.outbox.OutboxRepository;
 import kr.hhplus.be.server.product.Product;
@@ -13,6 +16,7 @@ import kr.hhplus.be.server.product.popularProduct.PopularProduct;
 import kr.hhplus.be.server.product.popularProduct.PopularProductRepository;
 import kr.hhplus.be.server.wallet.WalletService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -44,65 +48,78 @@ public class OrderService {
     @Autowired
     private OutboxRepository outboxRepository; // 1. OutboxRepository 주입
 
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
     @Transactional // 단일 트랜잭션으로 원자성 보장
-    public Order createOrder(Long userId, List<OrderItemRequest> orderItems, Long userCouponId) {
-
-        // 1. 주문 유효성 검사
-        if (orderItems == null || orderItems.isEmpty()) {
-            throw new IllegalArgumentException("ORDER_ITEMS_EMPTY");
+    public Order createOrder(Long userId, List<OrderItemRequest> orderItems, Long userCouponId, String idempotencyKey) {
+        // 0. idempotencyKey 중복 검사 (Idempotency 테이블 or Order에 unique 컬럼)
+        if(idempotencyKey == null || idempotencyKey.isBlank()){
+            throw new IllegalArgumentException("IDEMPOTENCY_KEY_REQUIRED");
         }
 
-        // 2. 상품 조회, 재고 확인/차감, 총액 계산 (동시성 제어 - 비관적 락)
-        BigDecimal totalAmount = BigDecimal.ZERO; // 쿠폰 적용 전 총 금액
-        Map<Long, Product> productMap = new HashMap<>();
-        for (OrderItemRequest item : orderItems) {
-            Long productId = item.productId();
-            Integer quantity = item.quantity();
-            Product product = productService.debit(productId, quantity);
-            BigDecimal itemPrice = product.getPrice().multiply(new BigDecimal(quantity));
-            totalAmount = totalAmount.add(itemPrice);
-            productMap.put(productId, product);
+        var exist = orderRepository.findByIdempotencyKey(idempotencyKey);
+        if(exist.isPresent())
+        {
+            return exist.get();
         }
 
-        BigDecimal finalPaymentAmount = totalAmount; // 최종 결제 금액
-        Long usedCouponId = null;
+        try {
+            // 1. 주문 유효성 검사
+            if (orderItems == null || orderItems.isEmpty()) {
+                throw new IllegalArgumentException("ORDER_ITEMS_EMPTY");
+            }
 
-        // 3. **쿠폰 사용 로직 추가**
-        if (userCouponId != null) {
-            // A. 사용자 쿠폰 유효성 검사 및 락 획득 (UserCouponRepository에 정의된 findForUpdate 사용)
-            UserCoupon userCoupon = couponService.validateAndLockUserCoupon(userCouponId, userId);
+            // 2. 상품 조회, 재고 확인/차감, 총액 계산 (동시성 제어 - 비관적 락)
+            BigDecimal paymentAmount = BigDecimal.ZERO; // 쿠폰 적용 전 총 금액
+            Map<Long, Product> productMap = new HashMap<>();
+            for (OrderItemRequest item : orderItems) {
+                Long productId = item.productId();
+                Integer quantity = item.quantity();
+                Product product = productService.debit(productId, quantity);
+                BigDecimal itemPrice = product.getPrice().multiply(new BigDecimal(quantity));
+                paymentAmount = paymentAmount.add(itemPrice);
+                productMap.put(productId, product);
+            }
 
-            // B. 쿠폰 정보 로드 및 유효 기간 재확인
-            Coupon coupon = couponService.getCouponById(userCoupon.getCouponId());
-            coupon.validateClaimable(); // 유효 기간 확인
+            // 3. **쿠폰 사용 로직 추가**
+            if (userCouponId != null && userCouponId > 0) {
+                // A. 사용자 쿠폰 유효성 검사 및 락 획득 (UserCouponRepository에 정의된 findForUpdate 사용)
+                UserCoupon userCoupon = couponService.validateAndLockUserCoupon(userCouponId, userId);
 
-            // C. 할인 금액 계산
-            finalPaymentAmount = coupon.calculateDiscountedAmount(totalAmount);
+                // B. 쿠폰 정보 로드 및 유효 기간 재확인
+                Coupon coupon = couponService.getCouponById(userCoupon.getCouponId());
+                coupon.validateClaimable(); // 유효 기간 확인
 
-            // D. 쿠폰 사용 처리 (상태를 USED로 변경)
-            userCoupon.use(); // UserCoupon 엔티티 내부에서 상태 변경
-            couponService.saveUserCoupon(userCoupon); // DB에 반영
-            usedCouponId = userCoupon.getUserCouponId();
+                // C. 할인 금액 계산
+                paymentAmount = coupon.calculateDiscountedAmount(paymentAmount);
+
+                // D. 쿠폰 사용 처리 (상태를 USED로 변경)
+                userCoupon.use(); // UserCoupon 엔티티 내부에서 상태 변경
+                couponService.saveUserCoupon(userCoupon); // DB에 반영
+            }
+
+            // 3. 잔액 확인 및 결제 (동시성 제어 - 비관적 락)
+            // WalletService.debit()은 내부적으로 SELECT FOR UPDATE를 사용하고, 잔액 부족 시 예외 발생
+            walletService.debit(userId, paymentAmount);
+
+            // 4. 주문 엔티티 생성 및 저장
+            // ⭐ 수정 부분: Order.java의 생성자 시그니처 (userId, totalAmount, itemRequests, productMap)에 맞게 호출
+            Order newOrder = new Order(userId, paymentAmount, orderItems, productMap,idempotencyKey);
+            Order savedOrder = orderRepository.save(newOrder);
+
+            // 5. 데이터 플랫폼 전송 (트랜잭션 커밋 직전에 실행)
+            recordOutboxEvent(savedOrder); // 2. Outbox 기록 메서드 호출
+
+            return savedOrder;
+        }catch (DataIntegrityViolationException e) {
+            // UNIQUE 제약 위반 → 다른 요청이 먼저 처리함
+            return orderRepository.findByIdempotencyKey(idempotencyKey)
+                    .orElseThrow(() -> e);
         }
+    }
 
-        // 3. 잔액 확인 및 결제 (동시성 제어 - 비관적 락)
-        // WalletService.debit()은 내부적으로 SELECT FOR UPDATE를 사용하고, 잔액 부족 시 예외 발생
-        walletService.debit(userId, totalAmount);
-
-        // 4. 주문 엔티티 생성 및 저장
-        // ⭐ 수정 부분: Order.java의 생성자 시그니처 (userId, totalAmount, itemRequests, productMap)에 맞게 호출
-        Order newOrder = new Order(userId, totalAmount, orderItems, productMap);
-        Order savedOrder = orderRepository.save(newOrder);
-
-        // 5. 데이터 플랫폼 전송 (트랜잭션 커밋 직전에 실행)
-        recordOutboxEvent(savedOrder); // 2. Outbox 기록 메서드 호출
-
-        // 6. 인기 상품 판매량 업데이트 (비동기 배치 대신 실시간 반영을 선택할 경우)
-        orderItems.forEach(item ->
-                updatePopularProductSales(item.productId(), item.quantity())
-        );
-
-        return savedOrder;
+    public Order createOrder(OrderRequest request) {
+        return createOrder(request.userId(),request.items(),request.userCouponId(),request.idempotencyKey());
     }
 
     private void recordOutboxEvent(Order order) {
@@ -118,29 +135,28 @@ public class OrderService {
     }
 
     private String generateOrderPayload(Order order) {
-        // 단순화된 JSON 문자열 Mock
-        return String.format("{\"orderId\": %d, \"userId\": %d, \"paidAmount\": %s, \"itemCount\": %d}",
+
+        List<OrderCreatedEventPayload.Item> items =
+                order.getOrderItems().stream()
+                        .map(oi -> new OrderCreatedEventPayload.Item(
+                                oi.getProductId(),
+                                oi.getQuantity()
+                        )).toList();
+
+        OrderCreatedEventPayload payload = new OrderCreatedEventPayload(
                 order.getOrderId(),
                 order.getUserId(),
-                order.getPaidAmount().toString(),
-                order.getOrderItems().size());
+                order.getPaidAmount(),
+                items
+        );
+
+        try {
+            return objectMapper.writeValueAsString(payload);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("ORDER_OUTBOX_PAYLOAD_SERIALIZE_ERROR", e);
+        }
     }
 
-    public Order createOrder(OrderRequest request) {
-        return createOrder(request.userId(),request.items(),request.userCouponId());
-    }
-
-    private void updatePopularProductSales(Long productId, Integer quantity) {
-        // productId로 PopularProduct를 조회하며 비관적 잠금 적용 (findForUpdateByProductId 사용)
-        popularProductRepository.findForUpdateByProductId(productId).ifPresentOrElse(popularProduct -> {
-            popularProduct.addSalesQuantity(quantity);
-            popularProductRepository.save(popularProduct);
-        }, () -> {
-            // 해당 상품이 인기 상품 목록에 없으면 새로 생성하여 추가
-            PopularProduct newPopularProduct = new PopularProduct(productId, quantity);
-            popularProductRepository.save(newPopularProduct);
-        });
-    }
     @Transactional
     public Order getOrder(Long orderId) {
         var order = orderRepository.findById(orderId);

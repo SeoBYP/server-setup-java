@@ -43,8 +43,8 @@ public class ProductServiceTest {
         var product = productService.getProduct(1L);
 
         // then
-        assertEquals(product.getProductId(), savedProduct.getProductId());
-        assertEquals(product.getName(), savedProduct.getName());
+        assertEquals(product.productId(), savedProduct.getProductId());
+        assertEquals(product.name(), savedProduct.getName());
     }
 
     @Test
@@ -61,9 +61,9 @@ public class ProductServiceTest {
 
         // then
         assertEquals(products.stream().count(), 3);
-        assertEquals(products.get(0).getProductId(), 1L);
-        assertEquals(products.get(1).getProductId(), 2L);
-        assertEquals(products.get(2).getProductId(), 3L);
+        assertEquals(products.get(0).productId(), 1L);
+        assertEquals(products.get(1).productId(), 2L);
+        assertEquals(products.get(2).productId(), 3L);
 
     }
 
@@ -99,8 +99,8 @@ public class ProductServiceTest {
         var product = productService.getProduct(1L);
 
         // then
-        assertEquals(product.getPrice(), savedProduct.getPrice());
-        assertEquals(product.getStock(), savedProduct.getStock());
+        assertEquals(product.price(), savedProduct.getPrice());
+        assertEquals(product.stock(), savedProduct.getStock());
     }
 
 

@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.Optional;
 
 public interface UserCouponRepository extends JpaRepository<UserCoupon, Long> {
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
+
     @Query("select w from UserCoupon w where w.userCouponId = :userCouponId")
     Optional<UserCoupon> findForUpdate(@Param("userCouponId") Long userCouponId);
 
