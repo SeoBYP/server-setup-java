@@ -71,10 +71,6 @@ public class CouponConcurrencyTest {
                     couponService.claimCoupon(userId, coupon.getCouponId());
                     successCount.incrementAndGet();
 
-                } catch (CouponAlreadyClaimedException e) {
-                    // 이미 누가 먼저 발급 받았을 때
-                    failCount.incrementAndGet();
-
                 } catch (Exception e) {
                     // 예상치 못한 예외도 실패로 카운트
                     e.printStackTrace();
@@ -140,8 +136,6 @@ public class CouponConcurrencyTest {
                     startLatch.await();
                     couponService.claimCoupon(userId,coupon.getCouponId());
                     successCount.incrementAndGet();
-                }catch (CouponAlreadyClaimedException e) {
-                    failCount.incrementAndGet();
                 } catch (Exception e) {
                     e.printStackTrace();
                     failCount.incrementAndGet();

@@ -88,26 +88,17 @@ public class OrderConcurrencyTest {
         CountDownLatch startLatch = new CountDownLatch(1);
         CountDownLatch doneLatch = new CountDownLatch(threadCount);
 
-        AtomicInteger successCount = new AtomicInteger();
-        AtomicInteger failCount = new AtomicInteger();
 
         // when : 여러 스레드가 동시에 createOrder 호출
         for (int i = 0; i < threadCount; i++) {
             executor.submit(() -> {
                 try {
                     startLatch.await(); // 모두 준비될 때까지 대기
-
                     orderService.createOrder(userId, orderItemRequests, 0L, idempotencyKey);
-                    successCount.incrementAndGet();
-
-                } catch (CouponAlreadyClaimedException e) {
-                    // 이미 누가 먼저 발급 받았을 때
-                    failCount.incrementAndGet();
 
                 } catch (Exception e) {
                     // 예상치 못한 예외도 실패로 카운트
                     e.printStackTrace();
-                    failCount.incrementAndGet();
 
                 } finally {
                     doneLatch.countDown();
@@ -228,5 +219,56 @@ public class OrderConcurrencyTest {
                         "userId=" + userId + " should not be charged");
             }
         }
+    }
+
+    @Test
+    void 동일_idempotencyKey_동시_주문_요청_테스트() throws Exception {
+        // given
+        Long userId = 1L;
+
+        List<Product> savedProducts = new ArrayList<Product>();
+        savedProducts.add(new Product(1L, "Test1", BigDecimal.valueOf(100), 10));
+        savedProducts.add(new Product(2L, "Test2", BigDecimal.valueOf(100), 10));
+        productRepository.saveAll(savedProducts);
+
+        Wallet savedWallet = new Wallet(1L, BigDecimal.valueOf(10000));
+        walletRepository.save(savedWallet);
+        String idempotencyKey = UUID.randomUUID().toString();
+
+        List<OrderItemRequest> orderItemRequests = new ArrayList<>();
+        orderItemRequests.add(new OrderItemRequest(1L, 5));
+        orderItemRequests.add(new OrderItemRequest(2L, 5));
+
+
+        int threadCount = 10; // 동시에 10번 발급 시도
+        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+        CountDownLatch startLatch = new CountDownLatch(1);
+        CountDownLatch doneLatch = new CountDownLatch(threadCount);
+
+        // when : 여러 스레드가 동시에 createOrder 호출
+        for (int i = 0; i < threadCount; i++) {
+            executor.submit(() -> {
+                try {
+                    startLatch.await(); // 모두 준비될 때까지 대기
+                    orderService.createOrder(userId, orderItemRequests, 0L, idempotencyKey);
+
+                } catch (Exception e) {
+                    // 예상치 못한 예외도 실패로 카운트
+                    e.printStackTrace();
+
+                } finally {
+                    doneLatch.countDown();
+                }
+            });
+        }
+        // 모든 스레드를 동시에 출발
+        startLatch.countDown();
+
+        // 모든 작업이 끝날 때까지 대기
+        doneLatch.await();
+        executor.shutdown();
+
+
+        assertEquals(1, orderRepository.findAll().size());
     }
 }
