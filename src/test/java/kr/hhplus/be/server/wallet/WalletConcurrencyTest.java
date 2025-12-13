@@ -35,8 +35,8 @@ public class WalletConcurrencyTest {
     }
 
     @Test
-    @DisplayName("동시에 지갑 충전 요청 시 한 번만 성공한다")
-    void 동시_지갑_충전_경쟁_테스트() throws Exception
+    @DisplayName("동시에 지갑 충전 요청이 들어와도 모든 요청이 합산되어 최종 잔액이 정확하다")
+    void 동시_지갑_충전_정합성_테스트() throws Exception
     {
         // given
         Long userId = 1L;
@@ -145,5 +145,65 @@ public class WalletConcurrencyTest {
         }
         // 그리고 row 수도 유저 수만큼인지 확인 (유저별 row 하나씩)
         assertEquals(userIds.length, walletRepository.findAll().size());
+    }
+
+    @Test
+    @DisplayName("동시에 지갑 잔액 차감 시도 시 음수 잔액이 발생하지 않고, 성공 횟수는 한도를 넘지 않는다")
+    void 동시_잔액_차감_경쟁_테스트() throws Exception {
+        // given
+        Long userId = 1L;
+        BigDecimal initialBalance = BigDecimal.valueOf(1_000);
+        BigDecimal withdrawAmount = BigDecimal.valueOf(300);
+        int threadCount = 10;
+
+        // 초기 지갑 세팅 ...
+        Wallet givenWallet = new Wallet(userId,initialBalance);
+        walletRepository.save(givenWallet);
+
+        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+        CountDownLatch startLatch = new CountDownLatch(1);
+        CountDownLatch doneLatch = new CountDownLatch(threadCount);
+
+        AtomicInteger successCount = new AtomicInteger();
+
+        // when - 멀티스레드로 withdraw 호출
+        for (int i = 0; i < threadCount; i++)
+        {
+            executor.submit(() ->{
+                try {
+                    startLatch.await(); // 모두 준비될 때까지 대기
+
+                    walletService.debit(userId, withdrawAmount);
+                    successCount.incrementAndGet();
+
+                } catch (CouponAlreadyClaimedException e) {
+                } catch (Exception e) {
+                    // 예상치 못한 예외도 실패로 카운트
+                    e.printStackTrace();
+                } finally {
+                    doneLatch.countDown();
+                }
+            });
+        }
+
+        // 모든 스레드를 동시에 출발
+        startLatch.countDown();
+
+
+        // 모든 작업이 끝날 때까지 대기
+        doneLatch.await();
+        executor.shutdown();
+
+        // then
+        var wallets = walletRepository.findAll().stream()
+                .filter(w -> w.getUserId().equals(userId))
+                .toList();
+        assertEquals(1, wallets.size());
+
+        // 지갑 충전 금액 확인
+        // 3) 최종 잔액 = initialBalance - (성공횟수 * withdrawAmount)
+        var totalUsed = withdrawAmount.multiply(BigDecimal.valueOf(successCount.intValue()));
+        var expectedValue = initialBalance.subtract(totalUsed);
+        assertTrue(walletService.getBalance(userId).compareTo(expectedValue) == 0);
     }
 }

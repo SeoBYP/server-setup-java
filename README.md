@@ -161,6 +161,8 @@ sequenceDiagram
     API-->>User: 주문 완료 응답
 ```
 
+- 동시성 제어 전략 및 테스트 보고서: [docs/concurrency-report.md](docs/concurrency-report.md)
+
 # 🗄️ ERD 설계[OrderItemRequest.java](src/main/java/kr/hhplus/be/server/order/DTO/OrderItemRequest.java)
 
 ## 📌 개요
