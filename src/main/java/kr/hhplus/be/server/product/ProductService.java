@@ -1,6 +1,7 @@
 package kr.hhplus.be.server.product;
 
 import kr.hhplus.be.server.product.DTO.ProductResponse;
+import kr.hhplus.be.server.product.popularProduct.PopularProductCache;
 import kr.hhplus.be.server.product.popularProduct.PopularProductRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -9,6 +10,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 @Service
@@ -16,6 +19,9 @@ public class ProductService {
 
     @Autowired
     private ProductRepository productRepository;
+
+    @Autowired
+    private PopularProductCache popularProductCache;
 
     @Autowired
     private PopularProductRepository popularProductRepository;
@@ -72,31 +78,27 @@ public class ProductService {
 
     @Transactional(readOnly = true)
     public List<ProductResponse> getTopSellingProducts() {
-        // 1. PopularProductRepository에서 상위 5개 상품 ID를 조회
-        List<Long> topProductIds = popularProductRepository.findTop5ProductIds();
+        // PopularProductCache에서 상위 5개 상품 ID를 가져옴
+        List<Long> ids = popularProductCache.getCachedIds();
 
-        // 💡 예외 처리: 인기 상품 ID 목록이 비어 있는 경우 (예: 초기 상태, 집계 오류)
-        // 불필요한 DB 조회를 막고 빈 리스트를 반환하여 안전하게 처리합니다.
-        if (topProductIds.isEmpty()) {
-            // Java 9+ 에서는 List.of()를, Java 8에서는 Collections.emptyList()를 사용할 수 있습니다.
-            return Collections.emptyList();
+        // 캐시 미스면 DB fallback (스케줄러가 실패/초기 상태 대비)
+        if (ids == null) {
+            ids = popularProductRepository.findTop5ProductIds();
+            popularProductCache.setIds(ids == null ? List.of() : ids);
         }
 
-        // 2. 캐시된 ID 리스트를 이용하여 상품 상세 정보만 DB에서 조회
-        // findByIdIn()을 통해 단 한 번의 쿼리로 N개의 상품 데이터를 가져옵니다. (N+1 문제 방지)
-        List<Product> products = productRepository.findByProductIdIn(topProductIds);
+        if (ids.isEmpty()) return Collections.emptyList();
 
-        // 3. Stream API를 사용하여 Product 엔티티 목록을 ProductResponse DTO 목록으로 변환
-        return products.stream()
-                // ProductResponse.from(Product product) 정적 팩토리 메서드 참조
+        List<Product> products = productRepository.findByProductIdIn(ids);
+
+        Map<Long, Product> map = products.stream()
+                .collect(Collectors.toMap(Product::getProductId, p -> p));
+
+        return ids.stream()
+                .map(map::get)
+                .filter(Objects::nonNull)
                 .map(ProductResponse::from)
-                .collect(Collectors.toList());
-    }
-    @Scheduled(fixedRate = 3600000) // 1시간마다 실행
-    public void calculateAndCacheTopSellingProducts() {
-        // 1. Order 테이블을 GROUP BY 하여 최근 3일간의 판매량을 집계
-        // 2. 상위 5개 ID 추출
-        // 3. topSellingCacheRepository.save(top5Ids)
+                .toList();
     }
 
     @Transactional
