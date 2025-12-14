@@ -13,10 +13,20 @@ public class WalletController {
     @Autowired
     private WalletService walletService;
 
+    @Autowired
+    private WalletFacade walletFacade;
+
     @PostMapping("/{userId}/charge")
     public ResponseEntity<Void> charge(@PathVariable Long userId, @RequestBody ChargeRequest request)
     {
-        walletService.charge(userId,request.getAmount());
+        walletFacade.charge(userId,request.getAmount());
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/{userId}/debit")
+    public ResponseEntity<Void> debit(@PathVariable Long userId, @RequestBody ChargeRequest request)
+    {
+        walletFacade.debit(userId,request.getAmount());
         return ResponseEntity.ok().build();
     }
 

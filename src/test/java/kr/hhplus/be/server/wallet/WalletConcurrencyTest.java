@@ -24,6 +24,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 })
 public class WalletConcurrencyTest {
     @Autowired
+    private WalletFacade walletFacade;
+
+    @Autowired
     private WalletService walletService;
 
     @Autowired
@@ -60,7 +63,7 @@ public class WalletConcurrencyTest {
                 try {
                     startLatch.await(); // 모두 준비될 때까지 대기
 
-                    walletService.charge(userId, chargeAmount);
+                    walletFacade.charge(userId, chargeAmount);
                     successCount.incrementAndGet();
 
                 } catch (CouponAlreadyClaimedException e) {
@@ -122,7 +125,7 @@ public class WalletConcurrencyTest {
                 executor.submit(() -> {
                     try {
                         startLatch.await();
-                        walletService.charge(userId, amount);
+                        walletFacade.charge(userId, amount);
                     } catch (Exception e) {
                         e.printStackTrace();
                     } finally {
@@ -173,10 +176,9 @@ public class WalletConcurrencyTest {
                 try {
                     startLatch.await(); // 모두 준비될 때까지 대기
 
-                    walletService.debit(userId, withdrawAmount);
+                    walletFacade.debit(userId, withdrawAmount);
                     successCount.incrementAndGet();
 
-                } catch (CouponAlreadyClaimedException e) {
                 } catch (Exception e) {
                     // 예상치 못한 예외도 실패로 카운트
                     e.printStackTrace();
@@ -188,7 +190,6 @@ public class WalletConcurrencyTest {
 
         // 모든 스레드를 동시에 출발
         startLatch.countDown();
-
 
         // 모든 작업이 끝날 때까지 대기
         doneLatch.await();
