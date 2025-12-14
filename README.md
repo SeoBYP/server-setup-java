@@ -162,6 +162,7 @@ sequenceDiagram
 ```
 
 - 동시성 제어 전략 및 테스트 보고서: [docs/concurrency-report.md](docs/concurrency-report.md)
+- 분산락과 캐싱 전략 적용 보고서(Distributed Lock / Cache): [docs/REPORT.md](docs/REPORT.md)
 
 # 🗄️ ERD 설계[OrderItemRequest.java](src/main/java/kr/hhplus/be/server/order/DTO/OrderItemRequest.java)
 
