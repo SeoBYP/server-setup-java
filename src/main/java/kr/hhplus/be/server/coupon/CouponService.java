@@ -20,7 +20,7 @@ public class CouponService {
     public UserCoupon claimCoupon(Long userId, Long couponId){
         // 1. **PESSIMISTIC_WRITE 락**을 걸고 Coupon 엔티티 조회
         //    -> 이 시점에 다른 트랜잭션은 해당 쿠폰에 접근 불가
-        var coupon = couponRepository.findCouponWithPessimisticLock(couponId)
+        var coupon = couponRepository.findById(couponId)
                 .orElseThrow(CouponNotFoundException::new);
 
         // 2. 중복 발급 체크
@@ -77,15 +77,15 @@ public class CouponService {
     }
 
     @Transactional
-    public List<UserCoupon> getUserCoupons(Long userId) {
-        return userCouponRepository.findAllByUserId(userId);
+    public UserCoupon useCoupon(Long userCouponId)
+    {
+        var userCoupon = userCouponRepository.findForUpdate(userCouponId).get();
+        userCoupon.use();
+        return userCouponRepository.save(userCoupon);
     }
 
     @Transactional
-    public UserCoupon useCoupon(Long userCouponId)
-    {
-        var userCoupon = userCouponRepository.findById(userCouponId).get();
-        userCoupon.use();
-        return userCouponRepository.save(userCoupon);
+    public List<UserCoupon> getUserCoupons(Long userId) {
+        return userCouponRepository.findAllByUserId(userId);
     }
 }

@@ -18,6 +18,9 @@ public class CouponController {
     @Autowired
     private CouponService couponService;
 
+    @Autowired
+    private CouponFacade couponFacade;
+
     // 1. 선착순 쿠폰 발급 API (POST /api/coupons/claim/{couponId})
     @PostMapping("/claim/{couponId}")
     public ResponseEntity<UserCoupon> claimCoupon(@PathVariable Long couponId, @RequestBody ClaimRequest claimRequest) {
@@ -25,7 +28,7 @@ public class CouponController {
         Long userId = claimRequest.userId();
 
         try {
-            UserCoupon claimedCoupon = couponService.claimCoupon(userId, couponId);
+            UserCoupon claimedCoupon = couponFacade.claimCoupon(userId, couponId);
             return ResponseEntity.ok(claimedCoupon);
         } catch (CouponAlreadyClaimedException e) {
             return ResponseEntity.status(HttpStatus.CONFLICT).build(); // 409

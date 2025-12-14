@@ -30,6 +30,10 @@ public class CouponConcurrencyTest {
     @Autowired
     private CouponService couponService;
 
+    @Autowired
+    private CouponFacade couponFacade;
+
+
     @BeforeEach
     void setUp() {
         userCouponRepository.deleteAll();
@@ -68,7 +72,7 @@ public class CouponConcurrencyTest {
                 try {
                     startLatch.await(); // 모두 준비될 때까지 대기
 
-                    couponService.claimCoupon(userId, coupon.getCouponId());
+                    couponFacade.claimCoupon(userId, coupon.getCouponId());
                     successCount.incrementAndGet();
 
                 } catch (Exception e) {
@@ -134,7 +138,7 @@ public class CouponConcurrencyTest {
                 try
                 {
                     startLatch.await();
-                    couponService.claimCoupon(userId,coupon.getCouponId());
+                    couponFacade.claimCoupon(userId,coupon.getCouponId());
                     successCount.incrementAndGet();
                 } catch (Exception e) {
                     e.printStackTrace();
@@ -159,4 +163,64 @@ public class CouponConcurrencyTest {
                 .toList();
         assertEquals(1, userCoupons.size());
     }
+
+    @Test
+    @DisplayName("동시에 같은 쿠폰 사용 요청 시 한 번만 성공한다")
+    void 동시_쿠폰_사용_경쟁_테스트() throws Exception {
+        // given
+        Long userId = 1L;
+
+        Coupon coupon = new Coupon(
+                "USE_CONC_TEST",
+                CouponType.FIXED,
+                BigDecimal.valueOf(1000),
+                LocalDateTime.now().minusDays(1),
+                LocalDateTime.now().plusDays(1),
+                LocalDateTime.now()
+        );
+        couponRepository.save(coupon);
+
+        // 먼저 발급 1건 생성 (CLAIMED 상태)
+        UserCoupon issued = couponService.claimCoupon(userId, coupon.getCouponId());
+        Long userCouponId = issued.getUserCouponId();
+
+        int threadCount = 10;
+        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+        CountDownLatch startLatch = new CountDownLatch(1);
+        CountDownLatch doneLatch = new CountDownLatch(threadCount);
+
+        AtomicInteger successCount = new AtomicInteger();
+        AtomicInteger failCount = new AtomicInteger();
+
+        // when
+        for (int i = 0; i < threadCount; i++) {
+            executor.submit(() -> {
+                try {
+                    startLatch.await();
+                    couponFacade.useCoupon(userCouponId); // 분산락 적용 지점
+                    successCount.incrementAndGet();
+                } catch (Exception e) {
+                    // 락 실패/기타 예외도 실패로 카운트
+                    e.printStackTrace();
+                    failCount.incrementAndGet();
+                } finally {
+                    doneLatch.countDown();
+                }
+            });
+        }
+
+        startLatch.countDown();
+        doneLatch.await();
+        executor.shutdown();
+
+        // then
+        assertEquals(1, successCount.get());
+        assertEquals(threadCount - 1, failCount.get());
+
+        // 최종 상태가 USED인지 확인 (enum명이 USED가 아니라면 실제 값으로 변경)
+        UserCoupon reloaded = userCouponRepository.findById(userCouponId).orElseThrow();
+        assertEquals(CouponStatus.USED, reloaded.getCouponStatus());
+    }
+
+    
 }
