@@ -7,8 +7,6 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -102,7 +100,7 @@ public class ProductService {
     }
 
     @Transactional
-    public Product charge(Long productId, Integer amount)
+    public Product chargeTx(Long productId, Integer amount)
     {
         var product = productRepository.findForUpdate(productId)
                 .orElseThrow(() -> new IllegalArgumentException("PRODUCT_NOT_FOUND"));
@@ -111,7 +109,7 @@ public class ProductService {
     }
 
     @Transactional
-    public Product debit(Long productId, Integer amount)
+    public Product debitTx(Long productId, Integer amount)
     {
         var product = productRepository.findForUpdate(productId)
                 .orElseThrow(() -> new IllegalArgumentException("PRODUCT_NOT_FOUND"));

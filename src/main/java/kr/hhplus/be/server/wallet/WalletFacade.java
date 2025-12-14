@@ -23,7 +23,7 @@ public class WalletFacade {
         }
 
         try {
-            walletService.charge(userId,amount);
+            walletService.chargeTx(userId,amount);
         }finally {
             redisLockService.unlock(key, token);
         }
@@ -39,7 +39,7 @@ public class WalletFacade {
         }
 
         try {
-            walletService.debit(userId, amount);
+            walletService.debitTx(userId, amount);
         } finally {
             redisLockService.unlock(key, token);
         }

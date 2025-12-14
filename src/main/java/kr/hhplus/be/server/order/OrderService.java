@@ -11,9 +11,7 @@ import kr.hhplus.be.server.outbox.DTO.OrderCreatedEventPayload;
 import kr.hhplus.be.server.outbox.Outbox;
 import kr.hhplus.be.server.outbox.OutboxRepository;
 import kr.hhplus.be.server.product.Product;
-import kr.hhplus.be.server.product.ProductFacade;
 import kr.hhplus.be.server.product.ProductService;
-import kr.hhplus.be.server.product.popularProduct.PopularProduct;
 import kr.hhplus.be.server.product.popularProduct.PopularProductRepository;
 import kr.hhplus.be.server.wallet.WalletService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,8 +20,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.security.PublicKey;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -52,7 +48,7 @@ public class OrderService {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Transactional // 단일 트랜잭션으로 원자성 보장
-    public Order createOrder(Long userId, List<OrderItemRequest> orderItems, Long userCouponId, String idempotencyKey) {
+    public Order createOrderTx(Long userId, List<OrderItemRequest> orderItems, Long userCouponId, String idempotencyKey) {
         // 0. idempotencyKey 중복 검사 (Idempotency 테이블 or Order에 unique 컬럼)
         if(idempotencyKey == null || idempotencyKey.isBlank()){
             throw new IllegalArgumentException("IDEMPOTENCY_KEY_REQUIRED");
@@ -92,7 +88,7 @@ public class OrderService {
                 Long productId = entry.getKey();
                 Integer quantity = entry.getValue();
 
-                Product product = productService.debit(productId, quantity);
+                Product product = productService.debitTx(productId, quantity);
 
                 BigDecimal itemPrice = product.getPrice().multiply(BigDecimal.valueOf(quantity));
                 paymentAmount = paymentAmount.add(itemPrice);
@@ -119,7 +115,7 @@ public class OrderService {
 
             // 3. 잔액 확인 및 결제 (동시성 제어 - 비관적 락)
             // WalletService.debit()은 내부적으로 SELECT FOR UPDATE를 사용하고, 잔액 부족 시 예외 발생
-            walletService.debit(userId, paymentAmount);
+            walletService.debitTx(userId, paymentAmount);
 
             // 4. 주문 엔티티 생성 및 저장
             // ⭐ 수정 부분: Order.java의 생성자 시그니처 (userId, totalAmount, itemRequests, productMap)에 맞게 호출
@@ -137,8 +133,8 @@ public class OrderService {
         }
     }
 
-    public Order createOrder(OrderRequest request) {
-        return createOrder(request.userId(),request.items(),request.userCouponId(),request.idempotencyKey());
+    public Order createOrderTx(OrderRequest request) {
+        return createOrderTx(request.userId(),request.items(),request.userCouponId(),request.idempotencyKey());
     }
 
     private void recordOutboxEvent(Order order) {

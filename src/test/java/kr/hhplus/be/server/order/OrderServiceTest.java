@@ -77,7 +77,7 @@ public class OrderServiceTest {
         orderItemRequests.add(new OrderItemRequest(1L, 5));
         orderItemRequests.add(new OrderItemRequest(2L, 5));
 
-        var order = orderService.createOrder(1L, orderItemRequests, 0L, idempotencyKey);
+        var order = orderService.createOrderTx(1L, orderItemRequests, 0L, idempotencyKey);
 
         // then
         assertEquals(order.getOrderItems().stream().count(), orderItemRequests.stream().count());
@@ -100,7 +100,7 @@ public class OrderServiceTest {
         orderItemRequests.add(new OrderItemRequest(1L, 5));
         orderItemRequests.add(new OrderItemRequest(2L, 5));
 
-        var order = orderService.createOrder(1L, orderItemRequests, 0L, idempotencyKey);
+        var order = orderService.createOrderTx(1L, orderItemRequests, 0L, idempotencyKey);
 
         // then
         var p1 = productRepository.findById(1L).get();
@@ -129,7 +129,7 @@ public class OrderServiceTest {
         orderItemRequests.add(new OrderItemRequest(1L, 5));
         orderItemRequests.add(new OrderItemRequest(2L, 5));
 
-        assertThatThrownBy(() -> orderService.createOrder(1L, orderItemRequests, 0L, idempotencyKey))
+        assertThatThrownBy(() -> orderService.createOrderTx(1L, orderItemRequests, 0L, idempotencyKey))
                 .isInstanceOf(InsufficientStockException.class)
                 .hasMessageContaining("INSUFFICIENT_STOCK");
 
@@ -154,7 +154,7 @@ public class OrderServiceTest {
         orderItemRequests.add(new OrderItemRequest(1L, 5));
         orderItemRequests.add(new OrderItemRequest(2L, 5));
 
-        assertThatThrownBy(() -> orderService.createOrder(1L, orderItemRequests, 0L, idempotencyKey))
+        assertThatThrownBy(() -> orderService.createOrderTx(1L, orderItemRequests, 0L, idempotencyKey))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("PRODUCT_NOT_FOUND");
 
@@ -179,7 +179,7 @@ public class OrderServiceTest {
         orderItemRequests.add(new OrderItemRequest(1L, 5));
         orderItemRequests.add(new OrderItemRequest(2L, 5));
 
-        assertThatThrownBy(() -> orderService.createOrder(1L, orderItemRequests, 0L, idempotencyKey))
+        assertThatThrownBy(() -> orderService.createOrderTx(1L, orderItemRequests, 0L, idempotencyKey))
                 .isInstanceOf(InsufficientBalanceException.class)
                 .hasMessageContaining("INSUFFICIENT_BALANCE");
 
@@ -206,8 +206,8 @@ public class OrderServiceTest {
         orderItemRequests.add(new OrderItemRequest(1L, 5));
         orderItemRequests.add(new OrderItemRequest(2L, 5));
 
-        Order o1 = orderService.createOrder(1L, orderItemRequests, 0L, idempotencyKey);
-        Order o2 = orderService.createOrder(1L, orderItemRequests, null, idempotencyKey);
+        Order o1 = orderService.createOrderTx(1L, orderItemRequests, 0L, idempotencyKey);
+        Order o2 = orderService.createOrderTx(1L, orderItemRequests, null, idempotencyKey);
 
         // then
         assertEquals(o1.getOrderId(), o2.getOrderId());
@@ -231,7 +231,7 @@ public class OrderServiceTest {
         orderItemRequests.add(new OrderItemRequest(1L, 5));
         orderItemRequests.add(new OrderItemRequest(2L, 5));
 
-        var order = orderService.createOrder(1L, orderItemRequests, 0L, idempotencyKey);
+        var order = orderService.createOrderTx(1L, orderItemRequests, 0L, idempotencyKey);
 
         // then
         var events = outboxRepository.findAll();
@@ -260,7 +260,7 @@ public class OrderServiceTest {
         orderItemRequests.add(new OrderItemRequest(1L, 5));
         orderItemRequests.add(new OrderItemRequest(2L, 5));
 
-        var createdOrder = orderService.createOrder(1L, orderItemRequests, 0L, idempotencyKey);
+        var createdOrder = orderService.createOrderTx(1L, orderItemRequests, 0L, idempotencyKey);
 
         // then
         var order = orderService.getOrder(createdOrder.getOrderId());
@@ -284,7 +284,7 @@ public class OrderServiceTest {
         orderItemRequests.add(new OrderItemRequest(1L, 5));
         orderItemRequests.add(new OrderItemRequest(2L, 5));
 
-        assertThatThrownBy(() -> orderService.createOrder(1L, orderItemRequests, 0L, idempotencyKey))
+        assertThatThrownBy(() -> orderService.createOrderTx(1L, orderItemRequests, 0L, idempotencyKey))
                 .isInstanceOf(InsufficientBalanceException.class)
                 .hasMessageContaining("INSUFFICIENT_BALANCE");
 

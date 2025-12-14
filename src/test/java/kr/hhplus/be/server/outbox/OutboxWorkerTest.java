@@ -59,7 +59,7 @@ public class OutboxWorkerTest {
         String key = UUID.randomUUID().toString();
         List<OrderItemRequest> items = List.of(new OrderItemRequest(1L, 2));
 
-        var order = orderService.createOrder(1L, items, null, key);
+        var order = orderService.createOrderTx(1L, items, null, key);
 
         // outbox DB 확인
         Outbox event = outboxRepository.findAll().get(0);

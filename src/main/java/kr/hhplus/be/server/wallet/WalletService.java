@@ -14,7 +14,7 @@ public class WalletService {
 
 
     @Transactional
-    public void charge(Long userId, BigDecimal amount)
+    public void chargeTx(Long userId, BigDecimal amount)
     {
         var wallet = walletRepository.findForUpdate(userId)
                 .orElseThrow(() -> new IllegalArgumentException("WALLET_NOT_FOUND"));
@@ -22,7 +22,7 @@ public class WalletService {
     }
 
     @Transactional
-    public void debit(Long userId, BigDecimal amount) {
+    public void debitTx(Long userId, BigDecimal amount) {
 
         var wallet = walletRepository.findForUpdate(userId)
                 .orElseThrow(() -> new IllegalArgumentException("WALLET_NOT_FOUND"));

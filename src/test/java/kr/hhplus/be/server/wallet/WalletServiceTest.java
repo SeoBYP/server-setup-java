@@ -43,7 +43,7 @@ public class WalletServiceTest {
         walletRepository.save(wallet);
 
         // when
-        walletService.charge(1L, BigDecimal.valueOf(500));
+        walletService.chargeTx(1L, BigDecimal.valueOf(500));
 
         // then
         BigDecimal balance = walletService.getBalance(1L);
@@ -59,7 +59,7 @@ public class WalletServiceTest {
         walletRepository.save(wallet);
 
         // when
-        walletService.charge(1L, BigDecimal.valueOf(500.255));
+        walletService.chargeTx(1L, BigDecimal.valueOf(500.255));
 
         // then
         var result = value.add(BigDecimal.valueOf(500.255));
@@ -75,7 +75,7 @@ public class WalletServiceTest {
         walletRepository.save(wallet);
 
         // when
-        assertThatThrownBy(() -> walletService.charge(1L, BigDecimal.valueOf(-500)))
+        assertThatThrownBy(() -> walletService.chargeTx(1L, BigDecimal.valueOf(-500)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("amount>0");
 
@@ -92,7 +92,7 @@ public class WalletServiceTest {
         walletRepository.save(wallet);
 
         // when
-        assertThatThrownBy(() -> walletService.charge(1L, null))
+        assertThatThrownBy(() -> walletService.chargeTx(1L, null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("amount>0");
 
@@ -110,7 +110,7 @@ public class WalletServiceTest {
         walletRepository.save(wallet);
 
         // when
-        walletService.debit(1L, BigDecimal.valueOf(500));
+        walletService.debitTx(1L, BigDecimal.valueOf(500));
 
         // then
         var wallet1 = walletRepository.findById(1L);
@@ -126,7 +126,7 @@ public class WalletServiceTest {
         walletRepository.save(wallet);
 
         // when
-        walletService.debit(1L, BigDecimal.valueOf(1000));
+        walletService.debitTx(1L, BigDecimal.valueOf(1000));
 
         // then
         var wallet1 = walletRepository.findById(1L);
@@ -142,7 +142,7 @@ public class WalletServiceTest {
         walletRepository.save(wallet);
 
         // when
-        assertThatThrownBy(() -> walletService.debit(1L, BigDecimal.valueOf(1200)))
+        assertThatThrownBy(() -> walletService.debitTx(1L, BigDecimal.valueOf(1200)))
                 .isInstanceOf(InsufficientBalanceException.class)
                 .hasMessage("INSUFFICIENT_BALANCE");
 
@@ -160,7 +160,7 @@ public class WalletServiceTest {
         walletRepository.save(wallet);
 
         // when
-        assertThatThrownBy(() -> walletService.debit(1L, BigDecimal.valueOf(-200)))
+        assertThatThrownBy(() -> walletService.debitTx(1L, BigDecimal.valueOf(-200)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("amount>0");
 
@@ -178,7 +178,7 @@ public class WalletServiceTest {
         walletRepository.save(wallet);
 
         // when
-        assertThatThrownBy(() -> walletService.debit(1L, null))
+        assertThatThrownBy(() -> walletService.debitTx(1L, null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("amount>0");
 

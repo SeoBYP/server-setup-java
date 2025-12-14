@@ -1,5 +1,4 @@
 package kr.hhplus.be.server.coupon;
-import kr.hhplus.be.server.coupon.exception.CouponAlreadyClaimedException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -181,7 +180,7 @@ public class CouponConcurrencyTest {
         couponRepository.save(coupon);
 
         // 먼저 발급 1건 생성 (CLAIMED 상태)
-        UserCoupon issued = couponService.claimCoupon(userId, coupon.getCouponId());
+        UserCoupon issued = couponService.claimCouponTx(userId, coupon.getCouponId());
         Long userCouponId = issued.getUserCouponId();
 
         int threadCount = 10;
@@ -222,5 +221,5 @@ public class CouponConcurrencyTest {
         assertEquals(CouponStatus.USED, reloaded.getCouponStatus());
     }
 
-    
+
 }

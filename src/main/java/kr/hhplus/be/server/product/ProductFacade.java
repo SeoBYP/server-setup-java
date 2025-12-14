@@ -19,7 +19,7 @@ public class ProductFacade {
         if (token == null) throw new IllegalStateException("LOCK_ACQUIRE_FAILED");
 
         try{
-            return productService.charge(productId, amount);
+            return productService.chargeTx(productId, amount);
         }finally {
             redisLockService.unlock(key,token);
         }
@@ -31,7 +31,7 @@ public class ProductFacade {
         if (token == null) throw new IllegalStateException("LOCK_ACQUIRE_FAILED");
 
         try{
-            return productService.debit(productId, amount);
+            return productService.debitTx(productId, amount);
         }finally {
             redisLockService.unlock(key,token);
         }

@@ -21,7 +21,7 @@ public class CouponFacade {
         if (token == null) throw new IllegalStateException("LOCK_ACQUIRE_FAILED");
 
         try {
-            return couponService.claimCoupon(userId, couponId);
+            return couponService.claimCouponTx(userId, couponId);
         } finally {
             redisLockService.unlock(key, token);
         }
@@ -35,7 +35,7 @@ public class CouponFacade {
         if (token == null) throw new IllegalStateException("LOCK_ACQUIRE_FAILED");
 
         try {
-            return couponService.useCoupon(userCouponId);
+            return couponService.useCouponTx(userCouponId);
         } finally {
             redisLockService.unlock(key, token);
         }

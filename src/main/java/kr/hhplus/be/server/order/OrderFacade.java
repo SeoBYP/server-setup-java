@@ -7,7 +7,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
-import java.util.stream.Collectors;
 
 @Service
 public class OrderFacade {
@@ -65,7 +64,7 @@ public class OrderFacade {
             }
 
             // 4) 이제 “주문 생성” 전체를 원자 구간으로 실행
-            return orderService.createOrder(userId, orderItems, userCouponId, idempotencyKey);
+            return orderService.createOrderTx(userId, orderItems, userCouponId, idempotencyKey);
         }finally {
             // 5) 역순 unlock (데드락/락 홀딩 최소화 관점)
             for (int i = acquiredProductLocks.size() - 1; i >= 0; i--) {

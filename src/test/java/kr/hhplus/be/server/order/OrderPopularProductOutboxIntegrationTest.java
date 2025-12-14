@@ -92,7 +92,7 @@ public class OrderPopularProductOutboxIntegrationTest {
         String idempotencyKey = UUID.randomUUID().toString();
 
         // when - 1) 주문 생성
-        Order savedOrder = orderService.createOrder(
+        Order savedOrder = orderService.createOrderTx(
                 TEST_USER_ID,
                 List.of(orderItemRequest),
                 null,

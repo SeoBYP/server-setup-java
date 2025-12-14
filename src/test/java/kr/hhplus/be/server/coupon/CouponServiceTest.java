@@ -55,7 +55,7 @@ public class CouponServiceTest {
         couponRepository.save(givenCoupon);
 
         // when
-        UserCoupon calimedCoupon = couponService.claimCoupon(1L, givenCoupon.getCouponId());
+        UserCoupon calimedCoupon = couponService.claimCouponTx(1L, givenCoupon.getCouponId());
 
         // then
         assertEquals(calimedCoupon.getCouponId(), givenCoupon.getCouponId());
@@ -75,7 +75,7 @@ public class CouponServiceTest {
         couponRepository.save(givenCoupon);
 
         // when && then
-        assertThatThrownBy(() -> couponService.claimCoupon(1L, givenCoupon.getCouponId()))
+        assertThatThrownBy(() -> couponService.claimCouponTx(1L, givenCoupon.getCouponId()))
                 .isInstanceOf(CouponExpiredException.class);
     }
 
@@ -93,7 +93,7 @@ public class CouponServiceTest {
         couponRepository.save(givenCoupon);
 
         // when && then
-        assertThatThrownBy(() -> couponService.claimCoupon(1L, givenCoupon.getCouponId()))
+        assertThatThrownBy(() -> couponService.claimCouponTx(1L, givenCoupon.getCouponId()))
                 .isInstanceOf(CouponNotYetAvailableException.class);
     }
 
@@ -101,7 +101,7 @@ public class CouponServiceTest {
     public void 쿠폰_미존재_예외() {
         // given
         // when && then
-        assertThatThrownBy(() -> couponService.claimCoupon(1L, 100L))
+        assertThatThrownBy(() -> couponService.claimCouponTx(1L, 100L))
                 .isInstanceOf(NoSuchElementException.class);
     }
 
@@ -121,10 +121,10 @@ public class CouponServiceTest {
         );
         couponRepository.save(givenCoupon);
 
-        couponService.claimCoupon(userId, givenCoupon.getCouponId());
+        couponService.claimCouponTx(userId, givenCoupon.getCouponId());
 
         // when && then
-        assertThatThrownBy(() -> couponService.claimCoupon(userId, givenCoupon.getCouponId()))
+        assertThatThrownBy(() -> couponService.claimCouponTx(userId, givenCoupon.getCouponId()))
                 .isInstanceOf(CouponAlreadyClaimedException.class) // 새로운 예외 정의 필요
                 .hasMessageContaining("ALREADY_CLAIMED");
     }
@@ -176,11 +176,11 @@ public class CouponServiceTest {
 
         // 2. 쿠폰 발급 (claimCoupon을 사용하거나 직접 UserCoupon 생성)
         // claimCoupon을 사용하여 발급 과정을 거치는 것이 테스트의 독립성 측면에서 더 좋습니다.
-        UserCoupon claimedCoupon = couponService.claimCoupon(userId, givenCoupon.getCouponId());
+        UserCoupon claimedCoupon = couponService.claimCouponTx(userId, givenCoupon.getCouponId());
 
         // when
         // 3. 발급받은 쿠폰 ID(userCouponId)로 사용 시도
-        UserCoupon usedCoupon = couponService.useCoupon(claimedCoupon.getUserCouponId());
+        UserCoupon usedCoupon = couponService.useCouponTx(claimedCoupon.getUserCouponId());
 
         // then
         // 1. 반환된 쿠폰의 상태가 USED인지 확인
@@ -209,14 +209,14 @@ public class CouponServiceTest {
         );
         couponRepository.save(givenCoupon);
 
-        UserCoupon claimedCoupon = couponService.claimCoupon(userId, givenCoupon.getCouponId());
+        UserCoupon claimedCoupon = couponService.claimCouponTx(userId, givenCoupon.getCouponId());
 
         // 2. 쿠폰 사용 성공 (USED 상태로 변경)
-        couponService.useCoupon(claimedCoupon.getUserCouponId());
+        couponService.useCouponTx(claimedCoupon.getUserCouponId());
 
         // when && then
         // 3. 동일 쿠폰 ID(userCouponId)로 재사용 시도 시 예외 발생
-        assertThatThrownBy(() -> couponService.useCoupon(claimedCoupon.getUserCouponId()))
+        assertThatThrownBy(() -> couponService.useCouponTx(claimedCoupon.getUserCouponId()))
                 .isInstanceOf(CouponAlreadyUsedException.class) // 새로운 예외 정의 필요
                 .hasMessageContaining("ALREADY_USED");
     }
@@ -229,7 +229,7 @@ public class CouponServiceTest {
 
         // when && then
         // findById.get()을 사용했다면 NoSuchElementException이 발생합니다.
-        assertThatThrownBy(() -> couponService.useCoupon(nonExistentUserCouponId))
+        assertThatThrownBy(() -> couponService.useCouponTx(nonExistentUserCouponId))
                 .isInstanceOf(NoSuchElementException.class);
     }
 }

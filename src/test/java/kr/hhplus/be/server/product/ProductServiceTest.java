@@ -188,7 +188,7 @@ public class ProductServiceTest {
 
         // when
         Integer amount = 5;
-        var product = productService.charge(1L,amount);
+        var product = productService.chargeTx(1L,amount);
 
         // then
         assertEquals(product.getProductId(), savedProduct.getProductId());
@@ -203,7 +203,7 @@ public class ProductServiceTest {
 
         // when
         Integer amount = -5;
-        assertThatThrownBy(() -> productService.charge(1L,amount)
+        assertThatThrownBy(() -> productService.chargeTx(1L,amount)
         )
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("amount>0");
@@ -216,7 +216,7 @@ public class ProductServiceTest {
         productRepository.save(savedProduct);
 
         // when
-        assertThatThrownBy(() -> productService.charge(1L,null)
+        assertThatThrownBy(() -> productService.chargeTx(1L,null)
         )
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("amount>0");
@@ -230,7 +230,7 @@ public class ProductServiceTest {
 
         // when
         Integer amount = 5;
-        var product = productService.debit(1L,amount);
+        var product = productService.debitTx(1L,amount);
 
         // then
         assertEquals(product.getProductId(), savedProduct.getProductId());
@@ -245,7 +245,7 @@ public class ProductServiceTest {
 
         // when
         Integer amount = -5;
-        assertThatThrownBy(() -> productService.debit(1L,amount)
+        assertThatThrownBy(() -> productService.debitTx(1L,amount)
         )
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("amount>0");
@@ -258,7 +258,7 @@ public class ProductServiceTest {
         productRepository.save(savedProduct);
 
         // when
-        assertThatThrownBy(() -> productService.debit(1L,null)
+        assertThatThrownBy(() -> productService.debitTx(1L,null)
         )
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("amount>0");
@@ -274,7 +274,7 @@ public class ProductServiceTest {
         Integer amount = 15;
 
         // then
-        assertThatThrownBy(() -> productService.debit(1L,amount)
+        assertThatThrownBy(() -> productService.debitTx(1L,amount)
         )
                 .isInstanceOf(InsufficientStockException.class)
                 .hasMessageContaining("INSUFFICIENT_STOCK");
