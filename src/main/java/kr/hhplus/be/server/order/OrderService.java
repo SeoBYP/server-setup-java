@@ -11,6 +11,7 @@ import kr.hhplus.be.server.outbox.DTO.OrderCreatedEventPayload;
 import kr.hhplus.be.server.outbox.Outbox;
 import kr.hhplus.be.server.outbox.OutboxRepository;
 import kr.hhplus.be.server.product.Product;
+import kr.hhplus.be.server.product.ProductFacade;
 import kr.hhplus.be.server.product.ProductService;
 import kr.hhplus.be.server.product.popularProduct.PopularProduct;
 import kr.hhplus.be.server.product.popularProduct.PopularProductRepository;
@@ -70,14 +71,32 @@ public class OrderService {
             }
 
             // 2. 상품 조회, 재고 확인/차감, 총액 계산 (동시성 제어 - 비관적 락)
-            BigDecimal paymentAmount = BigDecimal.ZERO; // 쿠폰 적용 전 총 금액
-            Map<Long, Product> productMap = new HashMap<>();
+            // productId 기준으로 수량 합산
+            Map<Long, Integer> merged = new HashMap<>();
             for (OrderItemRequest item : orderItems) {
-                Long productId = item.productId();
-                Integer quantity = item.quantity();
+                if (item == null) continue;
+                if (item.productId() == null) throw new IllegalArgumentException("PRODUCT_ID_REQUIRED");
+                if (item.quantity() == null || item.quantity() <= 0) throw new IllegalArgumentException("INVALID_QUANTITY");
+                merged.merge(item.productId(), item.quantity(), Integer::sum);
+            }
+
+            // 합산된 항목을 productId로 정렬 => 차감 1번씩만 수행
+            List<Map.Entry<Long, Integer>> sortedEntries = merged.entrySet().stream()
+                    .sorted(Map.Entry.comparingByKey())
+                    .toList();
+
+            BigDecimal paymentAmount = BigDecimal.ZERO;
+            Map<Long, Product> productMap = new HashMap<>();
+
+            for (var entry : sortedEntries) {
+                Long productId = entry.getKey();
+                Integer quantity = entry.getValue();
+
                 Product product = productService.debit(productId, quantity);
-                BigDecimal itemPrice = product.getPrice().multiply(new BigDecimal(quantity));
+
+                BigDecimal itemPrice = product.getPrice().multiply(BigDecimal.valueOf(quantity));
                 paymentAmount = paymentAmount.add(itemPrice);
+
                 productMap.put(productId, product);
             }
 

@@ -56,6 +56,9 @@ public class OrderConcurrencyTest {
     @Autowired
     private OrderService orderService;
 
+    @Autowired
+    private OrderFacade orderFacade;
+
     @BeforeEach
     void setUp() {
         productRepository.deleteAll();
@@ -94,7 +97,7 @@ public class OrderConcurrencyTest {
             executor.submit(() -> {
                 try {
                     startLatch.await(); // 모두 준비될 때까지 대기
-                    orderService.createOrder(userId, orderItemRequests, 0L, idempotencyKey);
+                    orderFacade.createOrder(userId, orderItemRequests, null, idempotencyKey);
 
                 } catch (Exception e) {
                     // 예상치 못한 예외도 실패로 카운트
@@ -113,15 +116,24 @@ public class OrderConcurrencyTest {
         executor.shutdown();
 
         // then
+
         // 1) DB에 주문은 1건만 있어야 한다
         var orders = orderRepository.findAll().stream()
                 .filter(o -> o.getUserId().equals(userId))
                 .toList();
         assertEquals(1, orders.size());
 
+
         // 2) 지갑 잔액은 한 번만 차감되었는지
+        BigDecimal expectedPaid = BigDecimal.ZERO;
+        for (OrderItemRequest item : orderItemRequests) {
+            Product p = productRepository.findById(item.productId()).orElseThrow();
+            expectedPaid = expectedPaid.add(p.getPrice().multiply(BigDecimal.valueOf(item.quantity())));
+        }
+
+        BigDecimal expectedBalance = BigDecimal.valueOf(10000).subtract(expectedPaid);
         var wallet = walletRepository.findById(userId).get();
-        assertTrue(BigDecimal.valueOf(9000).compareTo(wallet.getBalance()) == 0);
+        assertTrue(wallet.getBalance().compareTo(expectedBalance) == 0);
 
         // 3) 재고도 한 번만 차감되었는지
         var p1 = productRepository.findById(1L).get();
@@ -171,7 +183,7 @@ public class OrderConcurrencyTest {
                     List<OrderItemRequest> items =
                             List.of(new OrderItemRequest(productId, perUserQuantity));
 
-                    orderService.createOrder(uid, items, null, idempotencyKey);
+                    orderFacade.createOrder(uid, items, null, idempotencyKey);
                     successCount.incrementAndGet();
                     successUserIds.add(uid);
 
@@ -250,7 +262,7 @@ public class OrderConcurrencyTest {
             executor.submit(() -> {
                 try {
                     startLatch.await(); // 모두 준비될 때까지 대기
-                    orderService.createOrder(userId, orderItemRequests, 0L, idempotencyKey);
+                    orderFacade.createOrder(userId, orderItemRequests, null, idempotencyKey);
 
                 } catch (Exception e) {
                     // 예상치 못한 예외도 실패로 카운트
