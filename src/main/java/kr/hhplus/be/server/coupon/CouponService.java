@@ -20,7 +20,7 @@ public class CouponService {
     public UserCoupon claimCouponTx(Long userId, Long couponId){
         // 1. **PESSIMISTIC_WRITE 락**을 걸고 Coupon 엔티티 조회
         //    -> 이 시점에 다른 트랜잭션은 해당 쿠폰에 접근 불가
-        var coupon = couponRepository.findById(couponId)
+        var coupon = couponRepository.findCouponWithPessimisticLock(couponId)
                 .orElseThrow(CouponNotFoundException::new);
 
         // 2. 중복 발급 체크
