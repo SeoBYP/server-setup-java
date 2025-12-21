@@ -4,7 +4,7 @@ import kr.hhplus.be.server.order.DTO.OrderItemRequest;
 import kr.hhplus.be.server.product.Product;
 import kr.hhplus.be.server.product.ProductRepository;
 import kr.hhplus.be.server.product.popularProduct.PopularProduct;
-import kr.hhplus.be.server.product.popularProduct.PopularProductConsumer;
+import kr.hhplus.be.server.product.popularProduct.PopularProductRankingRedis;
 import kr.hhplus.be.server.product.popularProduct.PopularProductRepository;
 import kr.hhplus.be.server.outbox.Outbox;
 import kr.hhplus.be.server.outbox.OutboxRepository;
@@ -46,7 +46,7 @@ public class OrderPopularProductOutboxIntegrationTest {
     private OutboxRepository outboxRepository;
 
     @Autowired
-    private PopularProductConsumer popularProductConsumer;
+    private PopularProductRankingRedis popularProductConsumer;
 
     // 테스트용 상수
     private static final Long TEST_USER_ID = 100L;

@@ -9,6 +9,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.context.TestPropertySource;
 
 import java.math.BigDecimal;
@@ -35,10 +36,14 @@ public class CouponServiceTest {
     @Autowired
     private CouponService couponService;
 
+    @Autowired
+    StringRedisTemplate redisTemplate;
+
     @BeforeEach
     void setUp() {
         couponRepository.deleteAll();
         userCouponRepository.deleteAll();
+        redisTemplate.getConnectionFactory().getConnection().flushDb();
     }
 
     @Test

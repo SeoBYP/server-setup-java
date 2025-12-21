@@ -2,6 +2,7 @@ package kr.hhplus.be.server.product;
 
 import kr.hhplus.be.server.product.DTO.ProductResponse;
 import kr.hhplus.be.server.product.popularProduct.PopularProductCache;
+import kr.hhplus.be.server.product.popularProduct.PopularProductRankingRedis;
 import kr.hhplus.be.server.product.popularProduct.PopularProductRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -21,7 +22,7 @@ public class ProductService {
     private ProductRepository productRepository;
 
     @Autowired
-    private PopularProductCache popularProductCache;
+    private PopularProductRankingRedis rankingRedis;
 
     @Autowired
     private PopularProductRepository popularProductRepository;
@@ -78,22 +79,17 @@ public class ProductService {
 
     @Transactional(readOnly = true)
     public List<ProductResponse> getTopSellingProducts() {
-        // PopularProductCache에서 상위 5개 상품 ID를 가져옴
-        List<Long> ids = popularProductCache.getCachedIds();
-
-        // 캐시 미스면 DB fallback (스케줄러가 실패/초기 상태 대비)
-        if (ids == null) {
-            ids = popularProductRepository.findTop5ProductIds();
-            popularProductCache.setIds(ids == null ? List.of() : ids);
-        }
-
+        // 1) Redis ZSET에서 Top5 productId 조회
+        List<Long> ids = rankingRedis.getTopIds(5);
         if (ids.isEmpty()) return Collections.emptyList();
 
+        // 2) DB에서 상품 상세 조회 (IN 쿼리)
         List<Product> products = productRepository.findByProductIdIn(ids);
 
         Map<Long, Product> map = products.stream()
                 .collect(Collectors.toMap(Product::getProductId, p -> p));
 
+        // 3) Redis에서 받은 id 순서대로 정렬 유지
         return ids.stream()
                 .map(map::get)
                 .filter(Objects::nonNull)

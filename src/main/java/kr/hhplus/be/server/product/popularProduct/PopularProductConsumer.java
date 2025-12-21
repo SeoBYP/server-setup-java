@@ -18,7 +18,7 @@ public class PopularProductConsumer {
     private OutboxRepository outboxRepository;
 
     @Autowired
-    private PopularProductRepository popularProductRepository;
+    private PopularProductRankingRedis rankingRedis;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -43,7 +43,7 @@ public class PopularProductConsumer {
 
                 // 2. 인기 상품 집계 업데이트
                 payload.getItems().forEach(item -> {
-                    updatePopularProductSales(item.getProductId(), item.getQuantity());
+                    rankingRedis.increaseSales(item.getProductId(), item.getQuantity());
                 });
 
                 // 3. 처리 완료 표시
@@ -56,22 +56,4 @@ public class PopularProductConsumer {
         }
     }
 
-    private void updatePopularProductSales(Long productId, Integer quantity) {
-        popularProductRepository.findForUpdateByProductId(productId)
-                .ifPresentOrElse(popularProduct -> {
-                    popularProduct.addSalesQuantity(quantity);
-                    popularProductRepository.save(popularProduct);
-                }, () -> {
-                    try {
-                        popularProductRepository.save(new PopularProduct(productId, quantity));
-                    } catch (Exception ex) {
-                        // Race condition → UPDATE path 다시 시도
-                        popularProductRepository.findForUpdateByProductId(productId)
-                                .ifPresent(pp -> {
-                                    pp.addSalesQuantity(quantity);
-                                    popularProductRepository.save(pp);
-                                });
-                    }
-                });
-    }
 }

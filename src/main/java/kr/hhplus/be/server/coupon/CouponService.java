@@ -3,6 +3,9 @@ package kr.hhplus.be.server.coupon;
 import kr.hhplus.be.server.coupon.exception.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,29 +19,76 @@ public class CouponService {
     @Autowired
     private CouponRepository couponRepository;
 
+    @Autowired
+    private StringRedisTemplate redisTemplate;
+
+    private final DefaultRedisScript<Long> claimScript = new DefaultRedisScript<>();
+
+    public CouponService() {
+        claimScript.setResultType(Long.class);
+        claimScript.setScriptText("""
+            local remainKey = KEYS[1]
+            local issuedKey = KEYS[2]
+            local userId = ARGV[1]
+            
+            if redis.call('SISMEMBER', issuedKey, userId) == 1 then
+              return -1
+            end
+            
+            local remainStr = redis.call('GET', remainKey)
+            local remain = tonumber(remainStr)
+            if remain <= 0 then
+              return 0 -- SOLD_OUT
+            end
+            
+            redis.call('DECR', remainKey)
+            redis.call('SADD', issuedKey, userId)
+            return 1
+        """);
+    }
+
+    private void initRemainIfAbsent(Long couponId, long totalQuantity) {
+        String remainKey = "coupon:" + couponId + ":remain";
+        redisTemplate.opsForValue()
+                .setIfAbsent(remainKey, String.valueOf(totalQuantity));
+    }
+
     @Transactional
     public UserCoupon claimCouponTx(Long userId, Long couponId){
-        // 1. **PESSIMISTIC_WRITE 락**을 걸고 Coupon 엔티티 조회
-        //    -> 이 시점에 다른 트랜잭션은 해당 쿠폰에 접근 불가
-        var coupon = couponRepository.findCouponWithPessimisticLock(couponId)
+
+        // 0) 기간/상태 체크는 DB에서 해도 됨 (정확)
+        var coupon = couponRepository.findById(couponId)
                 .orElseThrow(CouponNotFoundException::new);
+        coupon.validateClaimable();
 
-        // 2. 중복 발급 체크
-        if (userCouponRepository.existsByUserIdAndCouponIdAndCouponStatus(userId, couponId, CouponStatus.CLAIMED)) {
-            throw new CouponAlreadyClaimedException();
-        }
+        // 쿠폰은 항상 1개로만 체크(여러 쿠폰은 없음)
+        initRemainIfAbsent(couponId, 1);
 
-        // 3. 재고 및 기간 체크 (도메인 로직 호출)
-        coupon.validateClaimable(); // 기존 로직
+        // 1) Redis에서 선착순 확정 (원자)
+        String remainKey = "coupon:" + couponId + ":remain";
+        String issuedKey = "coupon:" + couponId + ":issued";
 
-        try
-        {
-            // 4. UserCoupon 생성 및 저장
-            UserCoupon newUserCoupon = new UserCoupon(userId, coupon.getCouponId(), CouponStatus.CLAIMED);
+        Long r = redisTemplate.execute(
+                claimScript,
+                List.of(remainKey, issuedKey),
+                userId.toString()
+        );
+
+        if (r == -1L) throw new CouponAlreadyClaimedException();
+        if (r == 0L)  throw new CouponAlreadyUsedException();
+
+        // 핵심: Redis remain이 없으면 초기화 => 쿠폰은 무조건 1개만 있음
+        initRemainIfAbsent(couponId, 1); // 네 엔티티 필드명에 맞게 변경
+
+        // 2) Redis 성공이면 DB에 기록
+        try {
+            UserCoupon newUserCoupon = new UserCoupon(userId, couponId, CouponStatus.CLAIMED);
             return userCouponRepository.save(newUserCoupon);
-        }catch (DataIntegrityViolationException e) {
-            // 여기서 걸리는 건 결국 "이 coupon_id로 이미 누가 저장함"
-            throw new CouponAlreadyClaimedException("GLOBAL_ALREADY_CLAIMED");
+        } catch (DataIntegrityViolationException e) {
+            // 3) DB 실패하면 Redis 보상(이번 요청만)
+            redisTemplate.opsForSet().remove(issuedKey, userId.toString());
+            redisTemplate.opsForValue().increment(remainKey);
+            throw new CouponAlreadyClaimedException("DB_CONFLICT");
         }
     }
 
