@@ -32,3 +32,19 @@ spring:
     url: jdbc:mysql://localhost:3306/hhplus?characterEncoding=UTF-8&serverTimezone=UTC
     username: application
     password: application
+
+
+app:
+  redis:
+    dlq:
+      max-retry: 10
+      dead-order-created: dead:dlq:order-created:v1
+      retry-key-prefix:
+        dlq:retry:order-created:
+      max-batch: 10
+      drain-interval-ms: 2000
+      reclaim-interval-ms: 5000
+      reclaim-idle-seconds: 60
+      order-created: dlq:order-created:v1
+    dlq-group:
+      order-created: cg:dlq:order-created:v1

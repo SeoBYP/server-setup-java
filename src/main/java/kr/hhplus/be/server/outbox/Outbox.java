@@ -1,6 +1,7 @@
 package kr.hhplus.be.server.outbox;
 
 import jakarta.persistence.*;
+
 import java.time.LocalDateTime;
 
 @Entity
@@ -16,6 +17,9 @@ public class Outbox {
 
     @Column(name = "aggregate_id", nullable = false)
     private String aggregateId; // 예: 주문 ID
+
+    @Column(name = "event_type", nullable = false)
+    private String eventType; // 예: "ORDER_CREATED"
 
     @Column(name = "payload", columnDefinition = "TEXT", nullable = false)
     private String payload; // 전송할 주문 정보 (JSON 형태)
@@ -35,22 +39,46 @@ public class Outbox {
         PENDING, SENT, FAILED
     }
 
-    protected Outbox() {}
+    protected Outbox() {
+    }
 
-    public Outbox(String aggregateType, String aggregateId, String payload) {
+    public Outbox(String aggregateType, String aggregateId, String eventType,String payload) {
         this.aggregateType = aggregateType;
         this.aggregateId = aggregateId;
+        this.eventType = eventType;
         this.payload = payload;
         this.status = OutboxStatus.PENDING;
         this.createdAt = LocalDateTime.now();
     }
 
     // Getters
-    public Long getId() { return id; }
-    public String getPayload() { return payload; }
-    public OutboxStatus getStatus() { return status; }
-    public String getAggregateType() { return aggregateType; }
-    public String getAggregateId() { return aggregateId; }
+    public Long getId() {
+        return id;
+    }
+
+    public String getPayload() {
+        return payload;
+    }
+
+    public OutboxStatus getStatus() {
+        return status;
+    }
+
+    public String getAggregateType() {
+        return aggregateType;
+    }
+
+    public String getAggregateId() {
+        return aggregateId;
+    }
+
+    public String getEventType() {
+        return eventType;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
 
     // Business Methods
     public void markAsSent() {

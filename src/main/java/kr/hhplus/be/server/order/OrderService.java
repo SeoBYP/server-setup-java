@@ -144,6 +144,7 @@ public class OrderService {
 
         Outbox outboxEvent = new Outbox("ORDER",
                 order.getOrderId().toString(), // 집계 ID로 Order ID 사용
+                "ORDER_CREATED",
                 orderJsonPayload);
 
         outboxRepository.save(outboxEvent);
