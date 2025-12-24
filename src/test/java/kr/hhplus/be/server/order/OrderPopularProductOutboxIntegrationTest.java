@@ -117,9 +117,6 @@ public class OrderPopularProductOutboxIntegrationTest {
         assertThat(outbox.getStatus()).isEqualTo(Outbox.OutboxStatus.PENDING);
         assertThat(outbox.isProcessed()).isFalse();
 
-        // when - 2) 인기 상품 컨슈머 실행 (스케줄러 대신 직접 호출)
-        popularProductConsumer.processOrderEvents();
-
         // then - 2) PopularProduct, Outbox.processed 플래그 검증
         PopularProduct updatedPopularProduct = popularProductRepository.findByProductId(TEST_PRODUCT_ID)
                 .orElseThrow(() -> new AssertionError("PopularProduct not found"));
