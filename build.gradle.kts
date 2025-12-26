@@ -25,12 +25,16 @@ repositories {
 
 dependencyManagement {
 	imports {
+		// ✅ Boot BOM을 명시적으로 넣어서 스타터 버전 해석을 확실히 고정
+		mavenBom("org.springframework.boot:spring-boot-dependencies:3.4.1")
+
 		mavenBom("org.springframework.cloud:spring-cloud-dependencies:2024.0.0")
+		mavenBom("org.testcontainers:testcontainers-bom:1.20.4")
 	}
 }
 
 dependencies {
-    // Spring
+	// Spring
 	implementation("org.springframework.boot:spring-boot-starter-actuator")
 	implementation("org.springframework.boot:spring-boot-starter-data-jpa")
 	implementation("org.springframework.boot:spring-boot-starter-web")
@@ -38,16 +42,25 @@ dependencies {
 	// redis
 	implementation("org.springframework.boot:spring-boot-starter-data-redis")
 
-    // DB
+	// kafka (✅ 버전 제거)
+	implementation("org.springframework.kafka:spring-kafka")
+
+	// DB
 	runtimeOnly("com.mysql:mysql-connector-j")
 
-    // Test
-    testImplementation("org.springframework.boot:spring-boot-starter-test")
+	// Test
+	testImplementation("org.springframework.boot:spring-boot-starter-test")
 	testImplementation("org.springframework.boot:spring-boot-testcontainers")
 	testImplementation("org.testcontainers:junit-jupiter")
 	testImplementation("org.testcontainers:mysql")
+
+	testImplementation("org.springframework.kafka:spring-kafka-test")
+	testImplementation("org.testcontainers:kafka")
+
+	testImplementation("org.awaitility:awaitility:4.2.1")
 	testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
+
 
 tasks.withType<Test> {
 	useJUnitPlatform()
