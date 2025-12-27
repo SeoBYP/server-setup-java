@@ -11,6 +11,7 @@ import org.springframework.data.redis.connection.MessageListener;
 import org.springframework.data.redis.connection.stream.MapRecord;
 import org.springframework.data.redis.connection.stream.StreamRecords;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -18,6 +19,7 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+@Component
 public class OrderCreatedEventSubscriber implements MessageListener {
 
     @Autowired

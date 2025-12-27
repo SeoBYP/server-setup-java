@@ -54,8 +54,38 @@ public class CouponService {
     }
 
     @Transactional
-    public UserCoupon claimCouponTx(Long userId, Long couponId){
+    public UserCoupon claimCouponByMessage(String requestId, Long userId, Long couponId) {
+        var coupon = couponRepository.findById(couponId)
+                .orElseThrow(CouponNotFoundException::new);
 
+        coupon.validateClaimable();
+
+        // (선택) 빠른 중복 체크
+        if (userCouponRepository.existsByUserIdAndCouponIdAndCouponStatus(userId, couponId, CouponStatus.CLAIMED)) {
+            throw new CouponAlreadyClaimedException();
+        }
+
+        int updated = couponRepository.decrementRemainingIfAvailable(couponId);
+        if (updated == 0) {
+            throw new IllegalStateException("COUPON_SOLD_OUT");
+        }
+
+        try {
+            return userCouponRepository.save(new UserCoupon(userId, couponId, requestId, CouponStatus.CLAIMED));
+        } catch (DataIntegrityViolationException e) {
+            // ✅ 남은 수량 원복
+            couponRepository.incrementRemaining(couponId);
+
+            // ✅ requestId 멱등(재처리) 케이스면 기존 row 반환
+            return userCouponRepository.findByRequestId(requestId)
+                    .orElseThrow(() -> e);
+        }
+    }
+
+
+    @Transactional
+    public UserCoupon claimCouponTx(Long userId, Long couponId, String requestId)
+    {
         // 0) 기간/상태 체크는 DB에서 해도 됨 (정확)
         var coupon = couponRepository.findById(couponId)
                 .orElseThrow(CouponNotFoundException::new);
@@ -82,7 +112,7 @@ public class CouponService {
 
         // 2) Redis 성공이면 DB에 기록
         try {
-            UserCoupon newUserCoupon = new UserCoupon(userId, couponId, CouponStatus.CLAIMED);
+            UserCoupon newUserCoupon = new UserCoupon(userId, couponId, requestId,CouponStatus.CLAIMED);
             return userCouponRepository.save(newUserCoupon);
         } catch (DataIntegrityViolationException e) {
             // 3) DB 실패하면 Redis 보상(이번 요청만)

@@ -24,4 +24,7 @@ public interface UserCouponRepository extends JpaRepository<UserCoupon, Long> {
      * SELECT * FROM user_coupons WHERE user_id = ?
      */
     List<UserCoupon> findAllByUserId(Long userId);
+
+    // 멱등 처리(requestId)용
+    Optional<UserCoupon> findByRequestId(String requestId);
 }

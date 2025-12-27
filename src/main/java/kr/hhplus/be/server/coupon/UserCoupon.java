@@ -6,7 +6,14 @@ import kr.hhplus.be.server.coupon.exception.CouponAlreadyUsedException;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "user_coupons")
+@Table(name = "user_coupons",
+        uniqueConstraints = {
+                // ✅ 유저는 동일 쿠폰을 1번만 발급
+                @UniqueConstraint(name = "uk_user_coupon_user_coupon", columnNames = {"user_id", "coupon_id"}),
+                // ✅ Kafka 재처리/중복 소비 멱등
+                @UniqueConstraint(name = "uk_user_coupon_request_id", columnNames = {"request_id"})
+        }
+)
 public class UserCoupon {
 
     @Id
@@ -17,8 +24,12 @@ public class UserCoupon {
     @Column(name = "user_id", nullable = false)
     private Long userId;
 
-    @Column(name = "coupon_id",unique = true,nullable = false)
+    @Column(name = "coupon_id", nullable = false)
     private Long couponId;
+
+    // 멱등성 키
+    @Column(name = "request_id", nullable = false, length = 64)
+    private String requestId;
 
     @Column(name = "status",nullable = false)
     @Convert(converter = CouponStatusConverter.class)
@@ -33,9 +44,11 @@ public class UserCoupon {
     public UserCoupon() {
     }
 
-    public UserCoupon(Long userId, Long couponId, CouponStatus couponStatus) {
+    public UserCoupon(Long userId, Long couponId,
+                      String requestId, CouponStatus couponStatus) {
         this.userId = userId;
         this.couponId = couponId;
+        this.requestId = requestId;
         this.couponStatus = couponStatus;
         this.claimedAt = LocalDateTime.now();
         this.usedAt = null;
@@ -65,6 +78,9 @@ public class UserCoupon {
         return usedAt;
     }
 
+    public String getRequestId() {
+        return requestId;
+    }
 
     public void use() {
         if(couponStatus == CouponStatus.USED)

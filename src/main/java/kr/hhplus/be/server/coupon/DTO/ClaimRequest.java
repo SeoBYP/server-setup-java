@@ -1,5 +1,4 @@
-package kr.hhplus.be.server.coupon.DTO;
+package kr.hhplus.be.server.coupon.dto;
 
-public record ClaimRequest(Long couponId, Long userId) {
-
+public record ClaimRequest(Long couponId, Long userId, String requestId) {
 }
