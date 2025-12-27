@@ -48,3 +48,12 @@ app:
       order-created: dlq:order-created:v1
     dlq-group:
       order-created: cg:dlq:order-created:v1
+  kafka:
+    topics:
+      coupon-claim-requested: coupon-claim-requested.v1
+      coupon-claim-replied: coupon-claim-replied.v1
+    consumers:
+      coupon-claim:
+        concurrency: 1   # 실습에서 1 -> 3 -> 6 으로 변경
+      coupon-reply:
+        concurrency: 1

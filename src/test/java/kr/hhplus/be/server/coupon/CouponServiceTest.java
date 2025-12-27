@@ -15,6 +15,7 @@ import org.springframework.test.context.TestPropertySource;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.NoSuchElementException;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
@@ -60,7 +61,7 @@ public class CouponServiceTest {
         couponRepository.save(givenCoupon);
 
         // when
-        UserCoupon calimedCoupon = couponService.claimCouponTx(1L, givenCoupon.getCouponId());
+        UserCoupon calimedCoupon = couponService.claimCouponTx(1L, givenCoupon.getCouponId(), UUID.randomUUID().toString());
 
         // then
         assertEquals(calimedCoupon.getCouponId(), givenCoupon.getCouponId());
@@ -80,7 +81,7 @@ public class CouponServiceTest {
         couponRepository.save(givenCoupon);
 
         // when && then
-        assertThatThrownBy(() -> couponService.claimCouponTx(1L, givenCoupon.getCouponId()))
+        assertThatThrownBy(() -> couponService.claimCouponTx(1L, givenCoupon.getCouponId(), UUID.randomUUID().toString()))
                 .isInstanceOf(CouponExpiredException.class);
     }
 
@@ -98,7 +99,7 @@ public class CouponServiceTest {
         couponRepository.save(givenCoupon);
 
         // when && then
-        assertThatThrownBy(() -> couponService.claimCouponTx(1L, givenCoupon.getCouponId()))
+        assertThatThrownBy(() -> couponService.claimCouponTx(1L, givenCoupon.getCouponId(), UUID.randomUUID().toString()))
                 .isInstanceOf(CouponNotYetAvailableException.class);
     }
 
@@ -106,7 +107,7 @@ public class CouponServiceTest {
     public void 쿠폰_미존재_예외() {
         // given
         // when && then
-        assertThatThrownBy(() -> couponService.claimCouponTx(1L, 100L))
+        assertThatThrownBy(() -> couponService.claimCouponTx(1L, 100L, UUID.randomUUID().toString()))
                 .isInstanceOf(NoSuchElementException.class);
     }
 
@@ -126,10 +127,10 @@ public class CouponServiceTest {
         );
         couponRepository.save(givenCoupon);
 
-        couponService.claimCouponTx(userId, givenCoupon.getCouponId());
+        couponService.claimCouponTx(userId, givenCoupon.getCouponId(), UUID.randomUUID().toString());
 
         // when && then
-        assertThatThrownBy(() -> couponService.claimCouponTx(userId, givenCoupon.getCouponId()))
+        assertThatThrownBy(() -> couponService.claimCouponTx(userId, givenCoupon.getCouponId(), UUID.randomUUID().toString()))
                 .isInstanceOf(CouponAlreadyClaimedException.class) // 새로운 예외 정의 필요
                 .hasMessageContaining("ALREADY_CLAIMED");
     }
@@ -141,8 +142,8 @@ public class CouponServiceTest {
         Long userId = 1L;
 
         // 1. 테스트에 사용할 쿠폰 2개 생성
-        UserCoupon givenCoupon1 = new UserCoupon(userId, 10L, CouponStatus.CLAIMED);
-        UserCoupon givenCoupon2 = new UserCoupon(userId, 20L, CouponStatus.CLAIMED);
+        UserCoupon givenCoupon1 = new UserCoupon(userId, 10L, UUID.randomUUID().toString(), CouponStatus.CLAIMED);
+        UserCoupon givenCoupon2 = new UserCoupon(userId, 20L, UUID.randomUUID().toString(), CouponStatus.CLAIMED);
 
         // 2. 저장 (userCouponId가 생성됨)
         var savedCoupon1 = userCouponRepository.save(givenCoupon1);
@@ -181,7 +182,7 @@ public class CouponServiceTest {
 
         // 2. 쿠폰 발급 (claimCoupon을 사용하거나 직접 UserCoupon 생성)
         // claimCoupon을 사용하여 발급 과정을 거치는 것이 테스트의 독립성 측면에서 더 좋습니다.
-        UserCoupon claimedCoupon = couponService.claimCouponTx(userId, givenCoupon.getCouponId());
+        UserCoupon claimedCoupon = couponService.claimCouponTx(userId, givenCoupon.getCouponId(), UUID.randomUUID().toString());
 
         // when
         // 3. 발급받은 쿠폰 ID(userCouponId)로 사용 시도
@@ -214,7 +215,7 @@ public class CouponServiceTest {
         );
         couponRepository.save(givenCoupon);
 
-        UserCoupon claimedCoupon = couponService.claimCouponTx(userId, givenCoupon.getCouponId());
+        UserCoupon claimedCoupon = couponService.claimCouponTx(userId, givenCoupon.getCouponId(), UUID.randomUUID().toString());
 
         // 2. 쿠폰 사용 성공 (USED 상태로 변경)
         couponService.useCouponTx(claimedCoupon.getUserCouponId());
