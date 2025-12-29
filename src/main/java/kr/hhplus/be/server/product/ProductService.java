@@ -1,10 +1,12 @@
 package kr.hhplus.be.server.product;
 
+import kr.hhplus.be.server.product.DTO.CreateProductRequest;
 import kr.hhplus.be.server.product.DTO.ProductResponse;
 import kr.hhplus.be.server.product.popularProduct.PopularProductCache;
 import kr.hhplus.be.server.product.popularProduct.PopularProductRankingRedis;
 import kr.hhplus.be.server.product.popularProduct.PopularProductRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -72,9 +74,9 @@ public class ProductService {
     }
 
     @Transactional
-    public Product createProduct(Product product)
-    {
-        return productRepository.save(product);
+    public Product createProductTx(CreateProductRequest request) {
+        Product p = new Product(request.name(), request.price(), request.stock());
+        return productRepository.save(p);
     }
 
     @Transactional(readOnly = true)
@@ -115,4 +117,11 @@ public class ProductService {
     
         return productRepository.save(product);
     }
+
+    @Transactional(readOnly = true)
+    public Product getByNameTx(String name) {
+        return productRepository.findByName(name)
+                .orElseThrow(() -> new IllegalArgumentException("PRODUCT_NOT_FOUND"));
+    }
+
 }

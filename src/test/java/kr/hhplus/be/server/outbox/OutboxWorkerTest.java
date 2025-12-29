@@ -6,6 +6,7 @@ import kr.hhplus.be.server.product.Product;
 import kr.hhplus.be.server.product.ProductRepository;
 import kr.hhplus.be.server.wallet.Wallet;
 import kr.hhplus.be.server.wallet.WalletRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -45,34 +46,38 @@ public class OutboxWorkerTest {
     @MockitoBean
     private DataPlatformTransmitter transmitter;
 
+    @BeforeEach
+    void setUp() {
+        outboxRepository.deleteAll();
+        productRepository.deleteAll();
+        walletRepository.deleteAll();
+    }
+
     @Test
-    public void Outbox_전송실패시_STATUS_FAILED로_변경된다()
-    {
-        // given: 상품 + 지갑 + 주문 생성 → Outbox 1건(PENDING) 생성됨
-        List<Product> products = List.of(
-                new Product(1L, "Test1", BigDecimal.valueOf(100), 5)
-        );
-        productRepository.saveAll(products);
+    public void Outbox_전송실패시_STATUS_FAILED로_변경된다() {
+        // given: ✅ Product는 ID를 생성자가 아니라 DB가 생성하므로 저장 후 ID 사용
+        Product p = productRepository.save(new Product("Test1", BigDecimal.valueOf(100), 5));
+        Long productId = p.getProductId();
 
         walletRepository.save(new Wallet(1L, BigDecimal.valueOf(10000)));
 
         String key = UUID.randomUUID().toString();
-        List<OrderItemRequest> items = List.of(new OrderItemRequest(1L, 2));
+        List<OrderItemRequest> items = List.of(new OrderItemRequest(productId, 2));
 
-        var order = orderService.createOrderTx(1L, items, null, key);
+        orderService.createOrderTx(1L, items, null, key);
 
         // outbox DB 확인
         Outbox event = outboxRepository.findAll().get(0);
         assertEquals(Outbox.OutboxStatus.PENDING, event.getStatus());
 
-        // ★ Mock: transmitter.send() 호출 시 무조건 실패하게 만든다.
+        // Mock: transmitter.send() 호출 시 실패 반환
         when(transmitter.send(any(), any(), any())).thenReturn(false);
 
         // when: Worker 실행
         outboxWorker.processPendingEvents();
 
         // then: 상태가 FAILED 로 바뀌었는지 확인
-        Outbox updated = outboxRepository.findById(event.getId()).get();
+        Outbox updated = outboxRepository.findById(event.getId()).orElseThrow();
         assertEquals(Outbox.OutboxStatus.FAILED, updated.getStatus());
     }
 }

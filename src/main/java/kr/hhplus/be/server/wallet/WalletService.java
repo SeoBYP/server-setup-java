@@ -17,7 +17,7 @@ public class WalletService {
     public void chargeTx(Long userId, BigDecimal amount)
     {
         var wallet = walletRepository.findForUpdate(userId)
-                .orElseThrow(() -> new IllegalArgumentException("WALLET_NOT_FOUND"));
+                .orElseGet(() -> walletRepository.save(new Wallet(userId, BigDecimal.ZERO)));
         wallet.charge(amount);
     }
 
