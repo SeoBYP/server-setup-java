@@ -8,9 +8,7 @@ import java.time.LocalDateTime;
 @Entity
 @Table(name = "user_coupons",
         uniqueConstraints = {
-                // ✅ 유저는 동일 쿠폰을 1번만 발급
                 @UniqueConstraint(name = "uk_user_coupon_user_coupon", columnNames = {"user_id", "coupon_id"}),
-                // ✅ Kafka 재처리/중복 소비 멱등
                 @UniqueConstraint(name = "uk_user_coupon_request_id", columnNames = {"request_id"})
         }
 )
@@ -18,7 +16,7 @@ public class UserCoupon {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "user_coupon_id",nullable = false)
+    @Column(name = "user_coupon_id", nullable = false)
     private Long userCouponId;
 
     @Column(name = "user_id", nullable = false)
@@ -27,25 +25,23 @@ public class UserCoupon {
     @Column(name = "coupon_id", nullable = false)
     private Long couponId;
 
-    // 멱등성 키
     @Column(name = "request_id", nullable = false, length = 64)
     private String requestId;
 
-    @Column(name = "status",nullable = false)
+    @Column(name = "status", nullable = false)
     @Convert(converter = CouponStatusConverter.class)
     private CouponStatus couponStatus;
 
-    @Column(name = "claimed_at",nullable = false)
+    @Column(name = "claimed_at", nullable = false)
     private LocalDateTime claimedAt;
 
-    @Column(name = "used_at",nullable = true)
+    @Column(name = "used_at", nullable = true)
     private LocalDateTime usedAt;
 
     public UserCoupon() {
     }
 
-    public UserCoupon(Long userId, Long couponId,
-                      String requestId, CouponStatus couponStatus) {
+    public UserCoupon(Long userId, Long couponId, String requestId, CouponStatus couponStatus) {
         this.userId = userId;
         this.couponId = couponId;
         this.requestId = requestId;
@@ -54,37 +50,26 @@ public class UserCoupon {
         this.usedAt = null;
     }
 
-    public Long getUserCouponId() {
-        return userCouponId;
+    // ✅ 추가: CouponService에서 호출하는 팩토리 메서드
+    public static UserCoupon issue(Long userId, Coupon coupon, String requestId) {
+        return new UserCoupon(
+                userId,
+                coupon.getCouponId(),
+                requestId,
+                CouponStatus.CLAIMED
+        );
     }
 
-    public Long getUserId() {
-        return userId;
-    }
-
-    public Long getCouponId() {
-        return couponId;
-    }
-
-    public CouponStatus getCouponStatus() {
-        return couponStatus;
-    }
-
-    public LocalDateTime getClaimedAt() {
-        return claimedAt;
-    }
-
-    public LocalDateTime getUsedAt() {
-        return usedAt;
-    }
-
-    public String getRequestId() {
-        return requestId;
-    }
+    public Long getUserCouponId() { return userCouponId; }
+    public Long getUserId() { return userId; }
+    public Long getCouponId() { return couponId; }
+    public CouponStatus getCouponStatus() { return couponStatus; }
+    public LocalDateTime getClaimedAt() { return claimedAt; }
+    public LocalDateTime getUsedAt() { return usedAt; }
+    public String getRequestId() { return requestId; }
 
     public void use() {
-        if(couponStatus == CouponStatus.USED)
-            throw new CouponAlreadyUsedException();
+        if (couponStatus == CouponStatus.USED) throw new CouponAlreadyUsedException();
         couponStatus = CouponStatus.USED;
         usedAt = LocalDateTime.now();
     }

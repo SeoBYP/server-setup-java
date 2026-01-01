@@ -51,7 +51,7 @@ public class CouponController {
         // 3) 3초 대기 후 결과에 따라 응답
         final CouponClaimRepliedMessage reply;
         try {
-            reply = future.get(3, TimeUnit.SECONDS);
+            reply = future.get(5, TimeUnit.SECONDS);
         } catch (Exception e) {
             replyAwaiter.remove(requestId);
             return ResponseEntity.status(HttpStatus.GATEWAY_TIMEOUT).build();

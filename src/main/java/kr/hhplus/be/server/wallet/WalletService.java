@@ -16,14 +16,23 @@ public class WalletService {
     @Transactional
     public void chargeTx(Long userId, BigDecimal amount)
     {
+        // 충전이 0이면 DB 갱신도 없이 스킵
+        if(amount.compareTo(BigDecimal.ZERO) == 0)
+        {
+            return;
+        }
         var wallet = walletRepository.findForUpdate(userId)
-                .orElseThrow(() -> new IllegalArgumentException("WALLET_NOT_FOUND"));
+                .orElseGet(() -> walletRepository.save(new Wallet(userId, BigDecimal.ZERO)));
         wallet.charge(amount);
     }
 
     @Transactional
     public void debitTx(Long userId, BigDecimal amount) {
-
+        // 차감이 0이면 DB 갱신도 없이 스킵
+        if(amount.compareTo(BigDecimal.ZERO) == 0)
+        {
+            return;
+        }
         var wallet = walletRepository.findForUpdate(userId)
                 .orElseThrow(() -> new IllegalArgumentException("WALLET_NOT_FOUND"));
         wallet.debit(amount);

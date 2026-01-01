@@ -5,11 +5,17 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "products")
+@Table(
+        name = "products",
+        uniqueConstraints = {
+                @UniqueConstraint(name = "uk_products_name", columnNames = {"name"})
+        }
+)
 public class Product {
 
     @Id
-    @Column(name = "product_id", nullable = false)
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "product_id", nullable = false, columnDefinition = "BIGINT AUTO_INCREMENT")
     private Long productId;
 
     @Column(name = "name", nullable = false)
@@ -27,23 +33,19 @@ public class Product {
     public Product() {
     }
 
-    public Product(Long productId,
-                   String name,
-                   BigDecimal price,
-                   Integer stock) {
-        // 도메인 규칙: 가격은 null이 아니며, 0보다 커야 함 (0원 상품은 정책에 따라 허용 가능)
+    public Product(String name, BigDecimal price, Integer stock) {
+        if (name == null || name.isBlank()) {
+            throw new IllegalArgumentException("name_required");
+        }
         if (price == null || price.compareTo(BigDecimal.ZERO) < 0) {
-            throw new IllegalArgumentException("상품 가격은 0 미만일 수 없습니다.");
+            throw new IllegalArgumentException("price>=0");
         }
-
-        // 재고도 0 미만 방지
         if (stock == null || stock < 0) {
-            throw new IllegalArgumentException("상품 재고는 0 미만일 수 없습니다.");
+            throw new IllegalArgumentException("stock>=0");
         }
 
-        this.productId = productId;
         this.name = name;
-        this.price = price == null ? BigDecimal.ZERO : price;
+        this.price = price;
         this.stock = stock;
     }
 
@@ -67,25 +69,23 @@ public class Product {
         return createdAt;
     }
 
-    public void charge(Integer amount)
-    {
-        if(amount == null || amount <= 0)
+    public void charge(Integer amount) {
+        if (amount == null || amount <= 0)
             throw new IllegalArgumentException("amount>0");
         this.stock += amount;
     }
 
-    public void debit(Integer amount)
-    {
-        if(amount == null || amount <= 0)
+    public void debit(Integer amount) {
+        if (amount == null || amount <= 0)
             throw new IllegalArgumentException("amount>0");
-        if(this.stock < amount)
+        if (this.stock < amount)
             throw new InsufficientStockException();
         this.stock -= amount;
     }
 
     @PrePersist
-    void onCreate(){
-        if(createdAt == null)
+    void onCreate() {
+        if (createdAt == null)
             createdAt = LocalDateTime.now();
     }
 }

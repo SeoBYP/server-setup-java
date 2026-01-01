@@ -1,14 +1,18 @@
 package kr.hhplus.be.server.coupon.consumer;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import kr.hhplus.be.server.coupon.CouponService;
+import kr.hhplus.be.server.coupon.CouponFacade;
 import kr.hhplus.be.server.coupon.UserCoupon;
 import kr.hhplus.be.server.coupon.exception.CouponAlreadyClaimedException;
+import kr.hhplus.be.server.coupon.exception.CouponAlreadyUsedException;
 import kr.hhplus.be.server.coupon.exception.CouponExpiredException;
 import kr.hhplus.be.server.coupon.exception.CouponNotFoundException;
 import kr.hhplus.be.server.coupon.exception.CouponNotYetAvailableException;
+import kr.hhplus.be.server.coupon.exception.CouponSoldOutException;
 import kr.hhplus.be.server.coupon.messages.CouponClaimRepliedMessage;
 import kr.hhplus.be.server.coupon.messages.CouponClaimRequestedMessage;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -18,7 +22,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class CouponClaimRequestConsumer {
     @Autowired
-    private CouponService couponService;
+    private CouponFacade couponFacade;
 
     @Autowired
     private KafkaTemplate<String,String> kafkaTemplate;
@@ -29,17 +33,23 @@ public class CouponClaimRequestConsumer {
     @Value("${app.kafka.topics.coupon-claim-replied:coupon-claim-replied.v1}")
     private String replyTopic;
 
+    private static final Logger log = LoggerFactory.getLogger(CouponClaimRequestConsumer.class);
+
     @KafkaListener(
             topics = "${app.kafka.topics.coupon-claim-requested:coupon-claim-requested.v1}",
             concurrency = "${app.kafka.consumers.coupon-claim.concurrency:1}"
     )
-    public void onMessage(String json) throws Exception {
-        CouponClaimRequestedMessage req = objectMapper.readValue(json, CouponClaimRequestedMessage.class);
-
+    public void onMessage(String json) {
         CouponClaimRepliedMessage reply;
+        CouponClaimRequestedMessage req = null;
 
         try {
-            UserCoupon uc = couponService.claimCouponByMessage(req.requestId(), req.userId(), req.couponId());
+            req = objectMapper.readValue(json, CouponClaimRequestedMessage.class);
+
+            UserCoupon uc = couponFacade.claimCoupon(
+                    req.userId(), req.couponId(), req.requestId()
+            );
+
             reply = new CouponClaimRepliedMessage(
                     req.requestId(),
                     req.couponId(),
@@ -48,24 +58,63 @@ public class CouponClaimRequestConsumer {
                     uc.getUserCouponId(),
                     ""
             );
+
         } catch (CouponAlreadyClaimedException e) {
-            reply = new CouponClaimRepliedMessage(req.requestId(), req.couponId(), req.userId(), false, null, "ALREADY_CLAIMED");
+            reply = new CouponClaimRepliedMessage(
+                    req.requestId(), req.couponId(), req.userId(),
+                    false, null, "ALREADY_CLAIMED"
+            );
+        } catch (CouponSoldOutException e) {
+            reply = new CouponClaimRepliedMessage(
+                    req.requestId(), req.couponId(), req.userId(),
+                    false, null, "COUPON_SOLD_OUT"
+            );
         } catch (CouponNotYetAvailableException e) {
-            reply = new CouponClaimRepliedMessage(req.requestId(), req.couponId(), req.userId(), false, null, "COUPON_NOT_AVAILABLE");
+            reply = new CouponClaimRepliedMessage(
+                    req.requestId(), req.couponId(), req.userId(),
+                    false, null, "COUPON_NOT_AVAILABLE"
+            );
         } catch (CouponExpiredException e) {
-            reply = new CouponClaimRepliedMessage(req.requestId(), req.couponId(), req.userId(), false, null, "EXPIRED_COUPON");
+            reply = new CouponClaimRepliedMessage(
+                    req.requestId(), req.couponId(), req.userId(),
+                    false, null, "EXPIRED_COUPON"
+            );
         } catch (CouponNotFoundException e) {
-            reply = new CouponClaimRepliedMessage(req.requestId(), req.couponId(), req.userId(), false, null, "COUPON_NOT_FOUND");
+            reply = new CouponClaimRepliedMessage(
+                    req.requestId(), req.couponId(), req.userId(),
+                    false, null, "COUPON_NOT_FOUND"
+            );
+        } catch (CouponAlreadyUsedException e) {
+            // 혹시 다른 경로에서 진짜 USED가 올라오면 명시적으로 처리
+            reply = new CouponClaimRepliedMessage(
+                    req.requestId(), req.couponId(), req.userId(),
+                    false, null, "ALREADY_USED"
+            );
         } catch (IllegalStateException e) {
-            // sold out 등
             String code = e.getMessage() == null ? "UNKNOWN" : e.getMessage();
-            reply = new CouponClaimRepliedMessage(req.requestId(), req.couponId(), req.userId(), false, null, code);
+            reply = new CouponClaimRepliedMessage(
+                    req.requestId(), req.couponId(), req.userId(),
+                    false, null, code
+            );
         } catch (Exception e) {
-            reply = new CouponClaimRepliedMessage(req.requestId(), req.couponId(), req.userId(), false, null, "INTERNAL_ERROR");
+            log.error("Unexpected error processing coupon claim: requestId={}, userId={}, couponId={}",
+                    req != null ? req.requestId() : "null",
+                    req != null ? req.userId() : "null",
+                    req != null ? req.couponId() : "null",
+                    e
+            );
+
+            reply = new CouponClaimRepliedMessage(
+                    req.requestId(), req.couponId(), req.userId(),
+                    false, null, "INTERNAL_ERROR"
+            );
         }
 
-        // ✅ reply는 requestId 키로 보내면, API 쪽에서 매칭하기 쉬움
-        kafkaTemplate.send(replyTopic, req.requestId(), objectMapper.writeValueAsString(reply));
+        try {
+            kafkaTemplate.send(replyTopic, req.requestId(),
+                    objectMapper.writeValueAsString(reply));
+        } catch (Exception e) {
+            log.error("Failed to send reply: requestId={}", req.requestId(), e);
+        }
     }
-
 }

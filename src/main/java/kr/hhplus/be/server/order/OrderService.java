@@ -109,8 +109,7 @@ public class OrderService {
                 paymentAmount = coupon.calculateDiscountedAmount(paymentAmount);
 
                 // D. 쿠폰 사용 처리 (상태를 USED로 변경)
-                userCoupon.use(); // UserCoupon 엔티티 내부에서 상태 변경
-                couponService.saveUserCoupon(userCoupon); // DB에 반영
+                couponService.useCouponTx(userCoupon.getUserCouponId()); // DB에 반영
             }
 
             // 3. 잔액 확인 및 결제 (동시성 제어 - 비관적 락)

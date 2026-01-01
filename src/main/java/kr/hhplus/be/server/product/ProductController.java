@@ -1,23 +1,23 @@
 package kr.hhplus.be.server.product;
 
+import kr.hhplus.be.server.product.DTO.CreateProductRequest;
 import kr.hhplus.be.server.product.DTO.ProductResponse;
 import kr.hhplus.be.server.product.ProductService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
+import java.net.URI;
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/products")
 public class ProductController {
-
     @Autowired
     private  ProductService productService;
 
+    @Autowired
+    private ProductFacade productFacade;
 
     @GetMapping("/top-selling")
     public ResponseEntity<List<ProductResponse>> getTopSellingProducts() {
@@ -37,4 +37,14 @@ public class ProductController {
         List<ProductResponse> products = productService.getProducts();
         return ResponseEntity.ok(products);
     }
+
+    @PostMapping
+    public ResponseEntity<ProductResponse> createProduct(@RequestBody CreateProductRequest req) {
+        Product created = productFacade.createProduct(req);
+
+        return ResponseEntity
+                .created(URI.create("/api/v1/products/" + created.getProductId()))
+                .body(ProductResponse.from(created));
+    }
+
 }

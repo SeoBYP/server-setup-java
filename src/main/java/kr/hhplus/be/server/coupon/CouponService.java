@@ -1,12 +1,13 @@
 package kr.hhplus.be.server.coupon;
 
+import jakarta.persistence.EntityManager;
 import kr.hhplus.be.server.coupon.exception.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
@@ -21,6 +22,9 @@ public class CouponService {
 
     @Autowired
     private StringRedisTemplate redisTemplate;
+
+    @Autowired
+    private EntityManager entityManager;
 
     private final DefaultRedisScript<Long> claimScript = new DefaultRedisScript<>();
 
@@ -37,6 +41,9 @@ public class CouponService {
             
             local remainStr = redis.call('GET', remainKey)
             local remain = tonumber(remainStr)
+            if remain == nil then
+              return -2 -- NOT_INITIALIZED (방어)
+            end
             if remain <= 0 then
               return 0 -- SOLD_OUT
             end
@@ -53,48 +60,56 @@ public class CouponService {
                 .setIfAbsent(remainKey, String.valueOf(totalQuantity));
     }
 
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void compensateIncrementRemaining(Long couponId) {
+        couponRepository.incrementRemaining(couponId);
+    }
+
     @Transactional
     public UserCoupon claimCouponByMessage(String requestId, Long userId, Long couponId) {
+        var idempotent = userCouponRepository.findByRequestId(requestId);
+        if (idempotent.isPresent()) return idempotent.get();
+
         var coupon = couponRepository.findById(couponId)
                 .orElseThrow(CouponNotFoundException::new);
 
         coupon.validateClaimable();
 
-        // (선택) 빠른 중복 체크
-        if (userCouponRepository.existsByUserIdAndCouponIdAndCouponStatus(userId, couponId, CouponStatus.CLAIMED)) {
-            throw new CouponAlreadyClaimedException();
+        var existing = userCouponRepository
+                .findByUserIdAndCouponIdAndCouponStatus(userId, couponId, CouponStatus.CLAIMED);
+        if (existing.isPresent()) {
+            return existing.get();
         }
 
         int updated = couponRepository.decrementRemainingIfAvailable(couponId);
         if (updated == 0) {
-            throw new IllegalStateException("COUPON_SOLD_OUT");
+            throw new CouponSoldOutException();
         }
 
         try {
-            return userCouponRepository.save(new UserCoupon(userId, couponId, requestId, CouponStatus.CLAIMED));
+            return tryInsertUserCoupon(requestId, userId, couponId);
         } catch (DataIntegrityViolationException e) {
-            // ✅ 남은 수량 원복
-            couponRepository.incrementRemaining(couponId);
-
-            // ✅ requestId 멱등(재처리) 케이스면 기존 row 반환
-            return userCouponRepository.findByRequestId(requestId)
-                    .orElseThrow(() -> e);
+            entityManager.clear();
+            compensateIncrementRemaining(couponId);
+            throw new CouponAlreadyClaimedException();
         }
     }
 
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public UserCoupon tryInsertUserCoupon(String requestId, Long userId, Long couponId) {
+        return userCouponRepository.save(new UserCoupon(userId, couponId, requestId, CouponStatus.CLAIMED));
+    }
 
     @Transactional
-    public UserCoupon claimCouponTx(Long userId, Long couponId, String requestId)
-    {
-        // 0) 기간/상태 체크는 DB에서 해도 됨 (정확)
+    public UserCoupon claimCouponTx(Long userId, Long couponId, String requestId) {
         var coupon = couponRepository.findById(couponId)
                 .orElseThrow(CouponNotFoundException::new);
         coupon.validateClaimable();
 
-        // 쿠폰은 항상 1개로만 체크(여러 쿠폰은 없음)
-        initRemainIfAbsent(couponId, 1);
+        // ✅ Redis remain 초기값을 "1"로 고정하지 말고, DB의 남은 수량(또는 총 수량)으로 맞춘다.
+        // - 여기서는 Coupon 엔티티의 remainingQuantity를 사용한다고 가정합니다.
+        initRemainIfAbsent(couponId, coupon.getRemainingQuantity());
 
-        // 1) Redis에서 선착순 확정 (원자)
         String remainKey = "coupon:" + couponId + ":remain";
         String issuedKey = "coupon:" + couponId + ":issued";
 
@@ -104,18 +119,19 @@ public class CouponService {
                 userId.toString()
         );
 
+        if (r == null) throw new IllegalStateException("REDIS_EXECUTE_FAILED");
+
         if (r == -1L) throw new CouponAlreadyClaimedException();
-        if (r == 0L)  throw new CouponAlreadyUsedException();
+        // ✅ r == 0 은 SOLD_OUT 이므로 "이미 사용됨"이 아니라 "소진"으로 처리
+        if (r == 0L) throw new CouponSoldOutException();
+        // ✅ remainKey가 초기화 안 된 경우 방어(이 케이스가 뜨면 init 로직/키 삭제 여부를 점검)
+        if (r == -2L) throw new IllegalStateException("COUPON_REDIS_NOT_INITIALIZED");
 
-        // 핵심: Redis remain이 없으면 초기화 => 쿠폰은 무조건 1개만 있음
-        initRemainIfAbsent(couponId, 1); // 네 엔티티 필드명에 맞게 변경
-
-        // 2) Redis 성공이면 DB에 기록
         try {
-            UserCoupon newUserCoupon = new UserCoupon(userId, couponId, requestId,CouponStatus.CLAIMED);
+            UserCoupon newUserCoupon = new UserCoupon(userId, couponId, requestId, CouponStatus.CLAIMED);
             return userCouponRepository.save(newUserCoupon);
         } catch (DataIntegrityViolationException e) {
-            // 3) DB 실패하면 Redis 보상(이번 요청만)
+            // ✅ DB UNIQUE 충돌이면 Redis에서 선점한 발급 흔적을 롤백
             redisTemplate.opsForSet().remove(issuedKey, userId.toString());
             redisTemplate.opsForValue().increment(remainKey);
             throw new CouponAlreadyClaimedException("DB_CONFLICT");
@@ -124,22 +140,16 @@ public class CouponService {
 
     @Transactional
     public UserCoupon validateAndLockUserCoupon(Long userCouponId, Long expectedUserId) {
-        // PESSIMISTIC_WRITE 락을 걸고 UserCoupon 조회
-        // 주문 시 해당 쿠폰의 동시 사용을 방지합니다.
         UserCoupon userCoupon = userCouponRepository.findForUpdate(userCouponId)
                 .orElseThrow(UserCouponNotFoundException::new);
 
-        // 1. 소유자 일치 확인
         if (!userCoupon.getUserId().equals(expectedUserId)) {
-            throw new CouponOwnerMismatchException(); // 적절한 예외 처리 필요
+            throw new CouponOwnerMismatchException();
         }
 
-        // 2. 사용 가능한 상태인지 확인 (CLAIMED 상태만 사용 가능)
         if (userCoupon.getCouponStatus() != CouponStatus.CLAIMED) {
-            throw new CouponAlreadyUsedException(); // 이미 사용된 쿠폰
+            throw new CouponAlreadyUsedException();
         }
-
-        // 유효 기간 체크는 OrderService에서 Coupon 엔티티를 로드하여 진행하는 것이 일반적입니다.
 
         return userCoupon;
     }
@@ -152,13 +162,11 @@ public class CouponService {
 
     @Transactional
     public UserCoupon saveUserCoupon(UserCoupon userCoupon) {
-        // OrderService 트랜잭션 내에서 use()가 호출된 객체를 최종 저장합니다.
         return userCouponRepository.save(userCoupon);
     }
 
     @Transactional
-    public UserCoupon useCouponTx(Long userCouponId)
-    {
+    public UserCoupon useCouponTx(Long userCouponId) {
         var userCoupon = userCouponRepository.findForUpdate(userCouponId).get();
         userCoupon.use();
         return userCouponRepository.save(userCoupon);

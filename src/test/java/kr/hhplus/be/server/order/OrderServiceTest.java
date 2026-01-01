@@ -7,7 +7,7 @@ import kr.hhplus.be.server.product.InsufficientStockException;
 import kr.hhplus.be.server.product.Product;
 import kr.hhplus.be.server.product.ProductRepository;
 import kr.hhplus.be.server.product.ProductService;
-import kr.hhplus.be.server.wallet.InsufficientBalanceException;
+import kr.hhplus.be.server.wallet.exception.InsufficientBalanceException;
 import kr.hhplus.be.server.wallet.Wallet;
 import kr.hhplus.be.server.wallet.WalletRepository;
 import kr.hhplus.be.server.wallet.WalletService;
@@ -17,13 +17,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.TestPropertySource;
 
-import static org.assertj.core.api.Assertions.*;
-import static org.junit.jupiter.api.Assertions.*;
-
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.*;
 
 @SpringBootTest
 @TestPropertySource(properties = {
@@ -63,20 +63,18 @@ public class OrderServiceTest {
 
     @Test
     public void 주문생성_성공() {
-        // given
-        List<Product> savedProducts = new ArrayList<Product>();
-        savedProducts.add(new Product(1L, "Test1", BigDecimal.valueOf(100), 10));
-        savedProducts.add(new Product(2L, "Test2", BigDecimal.valueOf(100), 10));
-        productRepository.saveAll(savedProducts);
+        // given: ✅ ID는 DB가 생성하므로 저장 후 ID를 사용
+        Product p1 = productRepository.save(new Product("Test1", BigDecimal.valueOf(100), 10));
+        Product p2 = productRepository.save(new Product("Test2", BigDecimal.valueOf(100), 10));
 
-        Wallet savedWallet = new Wallet(1L, BigDecimal.valueOf(10000));
-        walletRepository.save(savedWallet);
+        walletRepository.save(new Wallet(1L, BigDecimal.valueOf(10000)));
         String idempotencyKey = UUID.randomUUID().toString();
-        // when
-        List<OrderItemRequest> orderItemRequests = new ArrayList<>();
-        orderItemRequests.add(new OrderItemRequest(1L, 5));
-        orderItemRequests.add(new OrderItemRequest(2L, 5));
 
+        List<OrderItemRequest> orderItemRequests = new ArrayList<>();
+        orderItemRequests.add(new OrderItemRequest(p1.getProductId(), 5));
+        orderItemRequests.add(new OrderItemRequest(p2.getProductId(), 5));
+
+        // when
         var order = orderService.createOrderTx(1L, orderItemRequests, 0L, idempotencyKey);
 
         // then
@@ -87,47 +85,41 @@ public class OrderServiceTest {
     @Test
     public void 주문생성시_재고와_잔액이_차감된다() {
         // given
-        List<Product> savedProducts = new ArrayList<Product>();
-        savedProducts.add(new Product(1L, "Test1", BigDecimal.valueOf(100), 10));
-        savedProducts.add(new Product(2L, "Test2", BigDecimal.valueOf(100), 10));
-        productRepository.saveAll(savedProducts);
+        Product p1 = productRepository.save(new Product("Test1", BigDecimal.valueOf(100), 10));
+        Product p2 = productRepository.save(new Product("Test2", BigDecimal.valueOf(100), 10));
 
-        Wallet savedWallet = new Wallet(1L, BigDecimal.valueOf(10000));
-        walletRepository.save(savedWallet);
+        walletRepository.save(new Wallet(1L, BigDecimal.valueOf(10000)));
         String idempotencyKey = UUID.randomUUID().toString();
-        // when
-        List<OrderItemRequest> orderItemRequests = new ArrayList<>();
-        orderItemRequests.add(new OrderItemRequest(1L, 5));
-        orderItemRequests.add(new OrderItemRequest(2L, 5));
 
-        var order = orderService.createOrderTx(1L, orderItemRequests, 0L, idempotencyKey);
+        List<OrderItemRequest> orderItemRequests = new ArrayList<>();
+        orderItemRequests.add(new OrderItemRequest(p1.getProductId(), 5));
+        orderItemRequests.add(new OrderItemRequest(p2.getProductId(), 5));
+
+        // when
+        orderService.createOrderTx(1L, orderItemRequests, 0L, idempotencyKey);
 
         // then
-        var p1 = productRepository.findById(1L).get();
-        var p2 = productRepository.findById(2L).get();
-        assertEquals(5, p1.getStock());  // 10 → 5
-        assertEquals(5, p2.getStock());  // 10 → 5
+        var rp1 = productRepository.findById(p1.getProductId()).orElseThrow();
+        var rp2 = productRepository.findById(p2.getProductId()).orElseThrow();
+        assertEquals(5, rp1.getStock());
+        assertEquals(5, rp2.getStock());
 
-        var wallet = walletRepository.findById(1L).get();
+        var wallet = walletRepository.findById(1L).orElseThrow();
         assertTrue(BigDecimal.valueOf(9000).compareTo(wallet.getBalance()) == 0);
     }
 
     @Test
     public void 재고부족시_롤백_실패() {
         // given
-        List<Product> savedProducts = new ArrayList<Product>();
-        savedProducts.add(new Product(1L, "Test1", BigDecimal.valueOf(100), 3));
-        savedProducts.add(new Product(2L, "Test2", BigDecimal.valueOf(100), 10));
-        productRepository.saveAll(savedProducts);
+        Product p1 = productRepository.save(new Product("Test1", BigDecimal.valueOf(100), 3));
+        Product p2 = productRepository.save(new Product("Test2", BigDecimal.valueOf(100), 10));
 
-        Wallet savedWallet = new Wallet(1L, BigDecimal.valueOf(10000));
-        walletRepository.save(savedWallet);
+        walletRepository.save(new Wallet(1L, BigDecimal.valueOf(10000)));
         String idempotencyKey = UUID.randomUUID().toString();
 
-        // when
         List<OrderItemRequest> orderItemRequests = new ArrayList<>();
-        orderItemRequests.add(new OrderItemRequest(1L, 5));
-        orderItemRequests.add(new OrderItemRequest(2L, 5));
+        orderItemRequests.add(new OrderItemRequest(p1.getProductId(), 5));
+        orderItemRequests.add(new OrderItemRequest(p2.getProductId(), 5));
 
         assertThatThrownBy(() -> orderService.createOrderTx(1L, orderItemRequests, 0L, idempotencyKey))
                 .isInstanceOf(InsufficientStockException.class)
@@ -135,24 +127,21 @@ public class OrderServiceTest {
 
         // then
         assertTrue(walletService.getBalance(1L).compareTo(BigDecimal.valueOf(10000)) == 0);
-        assertEquals(productService.getProduct(1L).stock(), 3);
-        assertEquals(productService.getProduct(2L).stock(), 10);
+        assertEquals(productService.getProduct(p1.getProductId()).stock(), 3);
+        assertEquals(productService.getProduct(p2.getProductId()).stock(), 10);
     }
 
     @Test
     public void 상품_없음_시_롤백_실패() {
         // given
-        List<Product> savedProducts = new ArrayList<Product>();
-        savedProducts.add(new Product(1L, "Test1", BigDecimal.valueOf(100), 10));
-        productRepository.saveAll(savedProducts);
+        Product p1 = productRepository.save(new Product("Test1", BigDecimal.valueOf(100), 10));
 
-        Wallet savedWallet = new Wallet(1L, BigDecimal.valueOf(10000));
-        walletRepository.save(savedWallet);
+        walletRepository.save(new Wallet(1L, BigDecimal.valueOf(10000)));
         String idempotencyKey = UUID.randomUUID().toString();
-        // when
+
         List<OrderItemRequest> orderItemRequests = new ArrayList<>();
-        orderItemRequests.add(new OrderItemRequest(1L, 5));
-        orderItemRequests.add(new OrderItemRequest(2L, 5));
+        orderItemRequests.add(new OrderItemRequest(p1.getProductId(), 5));
+        orderItemRequests.add(new OrderItemRequest(999999L, 5));
 
         assertThatThrownBy(() -> orderService.createOrderTx(1L, orderItemRequests, 0L, idempotencyKey))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -160,24 +149,21 @@ public class OrderServiceTest {
 
         // then
         assertTrue(walletService.getBalance(1L).compareTo(BigDecimal.valueOf(10000)) == 0);
-        assertEquals(productService.getProduct(1L).stock(), 10);
+        assertEquals(productService.getProduct(p1.getProductId()).stock(), 10);
     }
 
     @Test
     public void 포인트부족시_롤백_실패() {
         // given
-        List<Product> savedProducts = new ArrayList<Product>();
-        savedProducts.add(new Product(1L, "Test1", BigDecimal.valueOf(100), 10));
-        savedProducts.add(new Product(2L, "Test2", BigDecimal.valueOf(100), 10));
-        productRepository.saveAll(savedProducts);
+        Product p1 = productRepository.save(new Product("Test1", BigDecimal.valueOf(100), 10));
+        Product p2 = productRepository.save(new Product("Test2", BigDecimal.valueOf(100), 10));
 
-        Wallet savedWallet = new Wallet(1L, BigDecimal.valueOf(500));
-        walletRepository.save(savedWallet);
+        walletRepository.save(new Wallet(1L, BigDecimal.valueOf(500)));
         String idempotencyKey = UUID.randomUUID().toString();
-        // when
+
         List<OrderItemRequest> orderItemRequests = new ArrayList<>();
-        orderItemRequests.add(new OrderItemRequest(1L, 5));
-        orderItemRequests.add(new OrderItemRequest(2L, 5));
+        orderItemRequests.add(new OrderItemRequest(p1.getProductId(), 5));
+        orderItemRequests.add(new OrderItemRequest(p2.getProductId(), 5));
 
         assertThatThrownBy(() -> orderService.createOrderTx(1L, orderItemRequests, 0L, idempotencyKey))
                 .isInstanceOf(InsufficientBalanceException.class)
@@ -185,27 +171,24 @@ public class OrderServiceTest {
 
         // then
         assertTrue(walletService.getBalance(1L).compareTo(BigDecimal.valueOf(500)) == 0);
-        assertEquals(productService.getProduct(1L).stock(), 10);
-        assertEquals(productService.getProduct(2L).stock(), 10);
+        assertEquals(productService.getProduct(p1.getProductId()).stock(), 10);
+        assertEquals(productService.getProduct(p2.getProductId()).stock(), 10);
     }
 
     @Test
     public void 같은_idempotencyKey로_두번_호출하면_주문은_한번만_생성된다() {
         // given
-        List<Product> savedProducts = new ArrayList<Product>();
-        savedProducts.add(new Product(1L, "Test1", BigDecimal.valueOf(100), 10));
-        savedProducts.add(new Product(2L, "Test2", BigDecimal.valueOf(100), 10));
-        productRepository.saveAll(savedProducts);
+        Product p1 = productRepository.save(new Product("Test1", BigDecimal.valueOf(100), 10));
+        Product p2 = productRepository.save(new Product("Test2", BigDecimal.valueOf(100), 10));
 
-        Wallet savedWallet = new Wallet(1L, BigDecimal.valueOf(10000));
-        walletRepository.save(savedWallet);
+        walletRepository.save(new Wallet(1L, BigDecimal.valueOf(10000)));
         String idempotencyKey = UUID.randomUUID().toString();
 
-        // when
         List<OrderItemRequest> orderItemRequests = new ArrayList<>();
-        orderItemRequests.add(new OrderItemRequest(1L, 5));
-        orderItemRequests.add(new OrderItemRequest(2L, 5));
+        orderItemRequests.add(new OrderItemRequest(p1.getProductId(), 5));
+        orderItemRequests.add(new OrderItemRequest(p2.getProductId(), 5));
 
+        // when
         Order o1 = orderService.createOrderTx(1L, orderItemRequests, 0L, idempotencyKey);
         Order o2 = orderService.createOrderTx(1L, orderItemRequests, null, idempotencyKey);
 
@@ -215,22 +198,19 @@ public class OrderServiceTest {
     }
 
     @Test
-    public void 주문생성시_Outbox에_ORDER_이벤트가_기록된다()
-    {
+    public void 주문생성시_Outbox에_ORDER_이벤트가_기록된다() {
         // given
-        List<Product> savedProducts = new ArrayList<Product>();
-        savedProducts.add(new Product(1L, "Test1", BigDecimal.valueOf(100), 10));
-        savedProducts.add(new Product(2L, "Test2", BigDecimal.valueOf(100), 10));
-        productRepository.saveAll(savedProducts);
+        Product p1 = productRepository.save(new Product("Test1", BigDecimal.valueOf(100), 10));
+        Product p2 = productRepository.save(new Product("Test2", BigDecimal.valueOf(100), 10));
 
-        Wallet savedWallet = new Wallet(1L, BigDecimal.valueOf(10000));
-        walletRepository.save(savedWallet);
+        walletRepository.save(new Wallet(1L, BigDecimal.valueOf(10000)));
         String idempotencyKey = UUID.randomUUID().toString();
-        // when
-        List<OrderItemRequest> orderItemRequests = new ArrayList<>();
-        orderItemRequests.add(new OrderItemRequest(1L, 5));
-        orderItemRequests.add(new OrderItemRequest(2L, 5));
 
+        List<OrderItemRequest> orderItemRequests = new ArrayList<>();
+        orderItemRequests.add(new OrderItemRequest(p1.getProductId(), 5));
+        orderItemRequests.add(new OrderItemRequest(p2.getProductId(), 5));
+
+        // when
         var order = orderService.createOrderTx(1L, orderItemRequests, 0L, idempotencyKey);
 
         // then
@@ -241,25 +221,23 @@ public class OrderServiceTest {
         assertEquals("ORDER", event.getAggregateType());
         assertEquals(order.getOrderId().toString(), event.getAggregateId());
         assertNotNull(event.getPayload());
-        // 상태 enum 이름에 맞춰서
         assertEquals(Outbox.OutboxStatus.PENDING, event.getStatus());
     }
 
     @Test
     public void 단일주문조회_성공() {
-        List<Product> savedProducts = new ArrayList<Product>();
-        savedProducts.add(new Product(1L, "Test1", BigDecimal.valueOf(100), 10));
-        savedProducts.add(new Product(2L, "Test2", BigDecimal.valueOf(100), 10));
-        productRepository.saveAll(savedProducts);
+        // given
+        Product p1 = productRepository.save(new Product("Test1", BigDecimal.valueOf(100), 10));
+        Product p2 = productRepository.save(new Product("Test2", BigDecimal.valueOf(100), 10));
 
-        Wallet savedWallet = new Wallet(1L, BigDecimal.valueOf(10000));
-        walletRepository.save(savedWallet);
+        walletRepository.save(new Wallet(1L, BigDecimal.valueOf(10000)));
         String idempotencyKey = UUID.randomUUID().toString();
-        // when
-        List<OrderItemRequest> orderItemRequests = new ArrayList<>();
-        orderItemRequests.add(new OrderItemRequest(1L, 5));
-        orderItemRequests.add(new OrderItemRequest(2L, 5));
 
+        List<OrderItemRequest> orderItemRequests = new ArrayList<>();
+        orderItemRequests.add(new OrderItemRequest(p1.getProductId(), 5));
+        orderItemRequests.add(new OrderItemRequest(p2.getProductId(), 5));
+
+        // when
         var createdOrder = orderService.createOrderTx(1L, orderItemRequests, 0L, idempotencyKey);
 
         // then
@@ -271,24 +249,20 @@ public class OrderServiceTest {
     @Test
     public void 단일주문조회_실패_예외발생() {
         // given
-        List<Product> savedProducts = new ArrayList<Product>();
-        savedProducts.add(new Product(1L, "Test1", BigDecimal.valueOf(100), 10));
-        savedProducts.add(new Product(2L, "Test2", BigDecimal.valueOf(100), 10));
-        productRepository.saveAll(savedProducts);
+        Product p1 = productRepository.save(new Product("Test1", BigDecimal.valueOf(100), 10));
+        Product p2 = productRepository.save(new Product("Test2", BigDecimal.valueOf(100), 10));
 
-        Wallet savedWallet = new Wallet(1L, BigDecimal.valueOf(500));
-        walletRepository.save(savedWallet);
+        walletRepository.save(new Wallet(1L, BigDecimal.valueOf(500)));
         String idempotencyKey = UUID.randomUUID().toString();
-        // when
+
         List<OrderItemRequest> orderItemRequests = new ArrayList<>();
-        orderItemRequests.add(new OrderItemRequest(1L, 5));
-        orderItemRequests.add(new OrderItemRequest(2L, 5));
+        orderItemRequests.add(new OrderItemRequest(p1.getProductId(), 5));
+        orderItemRequests.add(new OrderItemRequest(p2.getProductId(), 5));
 
         assertThatThrownBy(() -> orderService.createOrderTx(1L, orderItemRequests, 0L, idempotencyKey))
                 .isInstanceOf(InsufficientBalanceException.class)
                 .hasMessageContaining("INSUFFICIENT_BALANCE");
 
-        // then
         assertThatThrownBy(() -> orderService.getOrder(1L))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("ORDER_NOT_FOUND");
@@ -297,7 +271,7 @@ public class OrderServiceTest {
     @Test
     public void ID리스트로_주문조회_성공() {
         // given
-        List<Order> savedOrders = new ArrayList<Order>();
+        List<Order> savedOrders = new ArrayList<>();
         savedOrders.add(new Order(1L));
         savedOrders.add(new Order(1L));
         orderRepository.saveAll(savedOrders);
@@ -306,15 +280,15 @@ public class OrderServiceTest {
         var orders = orderService.getOrders();
 
         // then
-        assertEquals(orders.stream().count(), 2);
-        assertEquals(orders.get(0).getUserId(), 1L);
-        assertEquals(orders.get(1).getUserId(), 1L);
+        assertEquals(2, orders.stream().count());
+        assertEquals(1L, orders.get(0).getUserId());
+        assertEquals(1L, orders.get(1).getUserId());
     }
 
     @Test
     public void 사용자ID로_주문조회_성공() {
         // given
-        List<Order> savedOrders = new ArrayList<Order>();
+        List<Order> savedOrders = new ArrayList<>();
         savedOrders.add(new Order(1L));
         savedOrders.add(new Order(2L));
         savedOrders.add(new Order(1L));
@@ -324,8 +298,8 @@ public class OrderServiceTest {
         var orders = orderService.getOrders(1L);
 
         // then
-        assertEquals(orders.stream().count(), 2);
-        assertEquals(orders.get(0).getOrderId(), 1L);
-        assertEquals(orders.get(1).getOrderId(), 3L);
+        assertEquals(2, orders.stream().count());
+        assertEquals(1L, orders.get(0).getUserId());
+        assertEquals(1L, orders.get(1).getUserId());
     }
 }
