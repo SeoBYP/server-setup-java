@@ -1,12 +1,14 @@
 package kr.hhplus.be.server.coupon.consumer;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import kr.hhplus.be.server.coupon.CouponService;
+import kr.hhplus.be.server.coupon.CouponFacade;
 import kr.hhplus.be.server.coupon.UserCoupon;
 import kr.hhplus.be.server.coupon.exception.CouponAlreadyClaimedException;
+import kr.hhplus.be.server.coupon.exception.CouponAlreadyUsedException;
 import kr.hhplus.be.server.coupon.exception.CouponExpiredException;
 import kr.hhplus.be.server.coupon.exception.CouponNotFoundException;
 import kr.hhplus.be.server.coupon.exception.CouponNotYetAvailableException;
+import kr.hhplus.be.server.coupon.exception.CouponSoldOutException;
 import kr.hhplus.be.server.coupon.messages.CouponClaimRepliedMessage;
 import kr.hhplus.be.server.coupon.messages.CouponClaimRequestedMessage;
 import org.slf4j.Logger;
@@ -20,7 +22,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class CouponClaimRequestConsumer {
     @Autowired
-    private CouponService couponService;
+    private CouponFacade couponFacade;
 
     @Autowired
     private KafkaTemplate<String,String> kafkaTemplate;
@@ -44,9 +46,8 @@ public class CouponClaimRequestConsumer {
         try {
             req = objectMapper.readValue(json, CouponClaimRequestedMessage.class);
 
-            // ✅ 비즈니스 로직 실행
-            UserCoupon uc = couponService.claimCouponByMessage(
-                    req.requestId(), req.userId(), req.couponId()
+            UserCoupon uc = couponFacade.claimCoupon(
+                    req.userId(), req.couponId(), req.requestId()
             );
 
             reply = new CouponClaimRepliedMessage(
@@ -63,6 +64,11 @@ public class CouponClaimRequestConsumer {
                     req.requestId(), req.couponId(), req.userId(),
                     false, null, "ALREADY_CLAIMED"
             );
+        } catch (CouponSoldOutException e) {
+            reply = new CouponClaimRepliedMessage(
+                    req.requestId(), req.couponId(), req.userId(),
+                    false, null, "COUPON_SOLD_OUT"
+            );
         } catch (CouponNotYetAvailableException e) {
             reply = new CouponClaimRepliedMessage(
                     req.requestId(), req.couponId(), req.userId(),
@@ -78,6 +84,12 @@ public class CouponClaimRequestConsumer {
                     req.requestId(), req.couponId(), req.userId(),
                     false, null, "COUPON_NOT_FOUND"
             );
+        } catch (CouponAlreadyUsedException e) {
+            // 혹시 다른 경로에서 진짜 USED가 올라오면 명시적으로 처리
+            reply = new CouponClaimRepliedMessage(
+                    req.requestId(), req.couponId(), req.userId(),
+                    false, null, "ALREADY_USED"
+            );
         } catch (IllegalStateException e) {
             String code = e.getMessage() == null ? "UNKNOWN" : e.getMessage();
             reply = new CouponClaimRepliedMessage(
@@ -85,7 +97,6 @@ public class CouponClaimRequestConsumer {
                     false, null, code
             );
         } catch (Exception e) {
-            // ✅ 모든 예외를 catch해서 Kafka에게 "처리 완료"로 알림
             log.error("Unexpected error processing coupon claim: requestId={}, userId={}, couponId={}",
                     req != null ? req.requestId() : "null",
                     req != null ? req.userId() : "null",
@@ -99,14 +110,11 @@ public class CouponClaimRequestConsumer {
             );
         }
 
-        // ✅ 항상 reply 전송 (예외가 발생해도)
         try {
             kafkaTemplate.send(replyTopic, req.requestId(),
                     objectMapper.writeValueAsString(reply));
         } catch (Exception e) {
             log.error("Failed to send reply: requestId={}", req.requestId(), e);
-            // ⚠️ reply 전송 실패는 로그만 남기고 Kafka에게는 메시지 처리 성공으로 알림
-            // (무한 재시도 방지)
         }
     }
 }

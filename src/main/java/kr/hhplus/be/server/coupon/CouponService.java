@@ -1,4 +1,3 @@
-// language: java
 package kr.hhplus.be.server.coupon;
 
 import jakarta.persistence.EntityManager;
@@ -42,6 +41,9 @@ public class CouponService {
             
             local remainStr = redis.call('GET', remainKey)
             local remain = tonumber(remainStr)
+            if remain == nil then
+              return -2 -- NOT_INITIALIZED (방어)
+            end
             if remain <= 0 then
               return 0 -- SOLD_OUT
             end
@@ -58,10 +60,6 @@ public class CouponService {
                 .setIfAbsent(remainKey, String.valueOf(totalQuantity));
     }
 
-    /**
-     * 보상(remaining 원복)만 별도 트랜잭션에서 처리
-     * - 기존 트랜잭션은 UNIQUE 충돌 등 예외로 인해 영속성 컨텍스트가 안전하지 않을 수 있으므로 분리한다.
-     */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void compensateIncrementRemaining(Long couponId) {
         couponRepository.incrementRemaining(couponId);
@@ -69,7 +67,6 @@ public class CouponService {
 
     @Transactional
     public UserCoupon claimCouponByMessage(String requestId, Long userId, Long couponId) {
-        // 0) requestId 멱등 우선
         var idempotent = userCouponRepository.findByRequestId(requestId);
         if (idempotent.isPresent()) return idempotent.get();
 
@@ -78,25 +75,20 @@ public class CouponService {
 
         coupon.validateClaimable();
 
-        // 1) 이미 발급된 유저면 기존 쿠폰 반환 (예외 던지지 않음)
         var existing = userCouponRepository
                 .findByUserIdAndCouponIdAndCouponStatus(userId, couponId, CouponStatus.CLAIMED);
         if (existing.isPresent()) {
-            return existing.get();  // ✅ 예외 대신 기존 쿠폰 반환
+            return existing.get();
         }
 
-        // 2) 재고 감소(원자)
         int updated = couponRepository.decrementRemainingIfAvailable(couponId);
         if (updated == 0) {
-            throw new IllegalStateException("COUPON_SOLD_OUT");
+            throw new CouponSoldOutException();
         }
 
-        // 3) INSERT는 REQUIRES_NEW로 격리
         try {
             return tryInsertUserCoupon(requestId, userId, couponId);
         } catch (DataIntegrityViolationException e) {
-            // ✅ UNIQUE 제약 조건 위반 = 누군가 먼저 발급받음
-            // 트랜잭션 격리 수준 때문에 재조회해도 안 보이므로 바로 예외 처리
             entityManager.clear();
             compensateIncrementRemaining(couponId);
             throw new CouponAlreadyClaimedException();
@@ -108,14 +100,15 @@ public class CouponService {
         return userCouponRepository.save(new UserCoupon(userId, couponId, requestId, CouponStatus.CLAIMED));
     }
 
-
     @Transactional
     public UserCoupon claimCouponTx(Long userId, Long couponId, String requestId) {
         var coupon = couponRepository.findById(couponId)
                 .orElseThrow(CouponNotFoundException::new);
         coupon.validateClaimable();
 
-        initRemainIfAbsent(couponId, 1);
+        // ✅ Redis remain 초기값을 "1"로 고정하지 말고, DB의 남은 수량(또는 총 수량)으로 맞춘다.
+        // - 여기서는 Coupon 엔티티의 remainingQuantity를 사용한다고 가정합니다.
+        initRemainIfAbsent(couponId, coupon.getRemainingQuantity());
 
         String remainKey = "coupon:" + couponId + ":remain";
         String issuedKey = "coupon:" + couponId + ":issued";
@@ -126,15 +119,19 @@ public class CouponService {
                 userId.toString()
         );
 
-        if (r == -1L) throw new CouponAlreadyClaimedException();
-        if (r == 0L) throw new CouponAlreadyUsedException();
+        if (r == null) throw new IllegalStateException("REDIS_EXECUTE_FAILED");
 
-        initRemainIfAbsent(couponId, 1);
+        if (r == -1L) throw new CouponAlreadyClaimedException();
+        // ✅ r == 0 은 SOLD_OUT 이므로 "이미 사용됨"이 아니라 "소진"으로 처리
+        if (r == 0L) throw new CouponSoldOutException();
+        // ✅ remainKey가 초기화 안 된 경우 방어(이 케이스가 뜨면 init 로직/키 삭제 여부를 점검)
+        if (r == -2L) throw new IllegalStateException("COUPON_REDIS_NOT_INITIALIZED");
 
         try {
             UserCoupon newUserCoupon = new UserCoupon(userId, couponId, requestId, CouponStatus.CLAIMED);
             return userCouponRepository.save(newUserCoupon);
         } catch (DataIntegrityViolationException e) {
+            // ✅ DB UNIQUE 충돌이면 Redis에서 선점한 발급 흔적을 롤백
             redisTemplate.opsForSet().remove(issuedKey, userId.toString());
             redisTemplate.opsForValue().increment(remainKey);
             throw new CouponAlreadyClaimedException("DB_CONFLICT");
