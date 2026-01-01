@@ -1,4 +1,4 @@
-package kr.hhplus.be.server.wallet;
+package kr.hhplus.be.server.wallet.exception;
 
 public class InsufficientBalanceException extends RuntimeException {
     public InsufficientBalanceException() {

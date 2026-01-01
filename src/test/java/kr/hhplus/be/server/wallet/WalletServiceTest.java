@@ -1,5 +1,6 @@
 package kr.hhplus.be.server.wallet;
 
+import kr.hhplus.be.server.wallet.exception.InsufficientBalanceException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

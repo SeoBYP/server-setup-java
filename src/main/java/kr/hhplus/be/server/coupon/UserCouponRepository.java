@@ -18,6 +18,13 @@ public interface UserCouponRepository extends JpaRepository<UserCoupon, Long> {
     // 특정 사용자가 특정 쿠폰을 이미 발급(CLAIMED) 받았는지 확인
     boolean existsByUserIdAndCouponIdAndCouponStatus(Long userId, Long couponId, CouponStatus status);
 
+
+    Optional<UserCoupon> findByUserIdAndCouponIdAndCouponStatus(
+            Long userId,
+            Long couponId,
+            CouponStatus couponStatus
+    );
+
     /**
      * userId로 해당 사용자가 발급받은 모든 쿠폰 목록을 조회합니다.
      * Spring Data JPA가 자동으로 다음 쿼리를 생성합니다.

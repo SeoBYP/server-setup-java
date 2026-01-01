@@ -7,7 +7,7 @@ spring:
     name: HangHaePlusDataSource
     type: com.zaxxer.hikari.HikariDataSource
     hikari:
-      maximum-pool-size: 3
+      maximum-pool-size: 20
       connection-timeout: 10000
       max-lifetime: 60000
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -66,9 +66,9 @@ app:
     consumers:
       group-id: hhplus-local
       coupon-claim:
-        concurrency: 1   # 실습에서 1 -> 3 -> 6 으로 변경
+        concurrency: 6   # 실습에서 1 -> 3 -> 6 으로 변경
       coupon-reply:
-        concurrency: 1
+        concurrency: 6
 
 server:
   port: 7777

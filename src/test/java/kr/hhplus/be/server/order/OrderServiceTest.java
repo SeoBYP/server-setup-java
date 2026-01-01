@@ -7,7 +7,7 @@ import kr.hhplus.be.server.product.InsufficientStockException;
 import kr.hhplus.be.server.product.Product;
 import kr.hhplus.be.server.product.ProductRepository;
 import kr.hhplus.be.server.product.ProductService;
-import kr.hhplus.be.server.wallet.InsufficientBalanceException;
+import kr.hhplus.be.server.wallet.exception.InsufficientBalanceException;
 import kr.hhplus.be.server.wallet.Wallet;
 import kr.hhplus.be.server.wallet.WalletRepository;
 import kr.hhplus.be.server.wallet.WalletService;

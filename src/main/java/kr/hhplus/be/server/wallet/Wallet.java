@@ -6,6 +6,8 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 import jakarta.persistence.*;
+import kr.hhplus.be.server.wallet.exception.InsufficientBalanceException;
+
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
@@ -43,14 +45,14 @@ public class Wallet {
 
     public void charge(BigDecimal amount)
     {
-        if(amount == null || amount.signum() <= 0)
+        if(amount == null || amount.signum() < 0)
             throw new IllegalArgumentException("amount>0");
         this.balance = this.balance.add(amount);
     }
 
     public void debit(BigDecimal amount)
     {
-        if(amount == null || amount.signum() <= 0)
+        if(amount == null || amount.signum() < 0)
             throw new IllegalArgumentException("amount>0");
         if (this.balance.compareTo(amount) < 0)
             throw new InsufficientBalanceException();
