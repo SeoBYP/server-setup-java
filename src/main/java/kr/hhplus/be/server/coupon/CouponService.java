@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Optional;
 
 @Service
 public class CouponService {
@@ -175,5 +176,14 @@ public class CouponService {
     @Transactional
     public List<UserCoupon> getUserCoupons(Long userId) {
         return userCouponRepository.findAllByUserId(userId);
+    }
+
+    /**
+     * 발급 응답 조립용 단건 조회.
+     * 기존에는 사용자의 쿠폰 목록 전체를 읽어 스트림으로 하나를 골랐다.
+     * 발급이 누적될수록 응답당 읽는 행 수가 늘어나므로 PK 조회로 대체한다.
+     */
+    public Optional<UserCoupon> getUserCoupon(Long userCouponId) {
+        return userCouponRepository.findById(userCouponId);
     }
 }
