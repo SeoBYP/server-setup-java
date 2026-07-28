@@ -890,6 +890,7 @@ graph LR
 | Kafka 토픽 파티션 | 6 (`replication-factor=1`) — 부하 테스트 중 3에서 상향 | `CouponKafkaTopicsConfig.java` |
 | Kafka Consumer 동시성 | **1 (기본값)** — 파티션 6을 단일 스레드가 소비 | `CouponClaimRequestConsumer.java` |
 | 쿠폰 reply 타임아웃 | 3초 | `CouponClaimReplyAwaiter.java` |
+| springdoc-openapi | **2.7.0** (Boot 3.4 = Spring 6.2 호환 버전) | `build.gradle.kts` |
 | 분산락 wait / lease | 3초 / 5~10초 | `OrderFacade.java` |
 | Outbox 폴링 주기 | 10초 (배치 100건) | `OutboxWorker.java` |
 | DLQ 최대 재시도 | 10회 | `application.yml` |
@@ -897,6 +898,25 @@ graph LR
 ---
 
 ## 프로젝트 구조
+
+### 저장소 레이아웃
+
+```
+.
+├── src/main/java/       애플리케이션 코드
+├── src/test/java/       단위 · 동시성 · 통합 테스트 (77개)
+├── docs/                기술 문서 · 장애 회고
+│   └── assets/          ERD · 인프라 구성도 · Swagger 화면
+├── k6/                  부하 테스트 스크립트 + 측정 원본(result-*.json)
+├── docker-compose.yml   MySQL · Redis · Kafka · Zookeeper
+├── build.gradle.kts
+└── .gitignore           build/ · data/ · .gradle/ · .idea/ 제외
+```
+
+> `data/`(MySQL 컨테이너 볼륨)와 `build/`는 **추적하지 않습니다.**
+> 클론 직후 `docker-compose up -d` 를 실행하면 `data/` 가 새로 생성됩니다.
+
+### 애플리케이션 패키지
 
 ```
 src/main/java/kr/hhplus/be/server/
