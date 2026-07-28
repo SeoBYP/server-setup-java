@@ -1,0 +1,31 @@
+# --- Gradle ---
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!gradle/wrapper/gradle-wrapper.properties
+
+# --- IDE ---
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+.vscode/
+nbproject/
+
+# --- 로컬 인프라 데이터 (docker-compose 볼륨) ---
+# MySQL 컨테이너가 여기에 데이터 파일을 씁니다. 저장소에 포함하지 않습니다.
+data/
+
+# --- 로그 ---
+*.log
+logs/
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- 참고 ---
+# k6/result-*.json 은 부하 테스트 측정 원본이므로 의도적으로 커밋합니다.
+# docs/assets/ 의 이미지도 문서 자산이므로 커밋합니다.

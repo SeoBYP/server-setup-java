@@ -1,560 +1,774 @@
-# 📦 E-Commerce 주문 시스템
+# E-Commerce 주문 서버
 
-> 항해99에서 항해 Lite 백엔드 과정을 진행하면서 **동시성 제어**, **분산 시스템 설계**, **장애 복구**를 구현한 포트폴리오 프로젝트
+**동시 요청과 부분 실패 상황에서 재화가 중복 지급되거나 음수가 되지 않도록** 트랜잭션 경계·멱등성·락 순서를 설계하고,
+부하 테스트로 실패 모드를 재현해 수렴시킨 Java/Spring 백엔드 프로젝트입니다.
 
 [![Java](https://img.shields.io/badge/Java-17-orange)](https://openjdk.org/)
-[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.x-green)](https://spring.io/projects/spring-boot)
+[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.4.1-green)](https://spring.io/projects/spring-boot)
 [![Redis](https://img.shields.io/badge/Redis-7.4-red)](https://redis.io/)
-[![Kafka](https://img.shields.io/badge/Kafka-7.6-black)](https://kafka.apache.org/)
+[![Kafka](https://img.shields.io/badge/Kafka-7.6.1-black)](https://kafka.apache.org/)
 [![MySQL](https://img.shields.io/badge/MySQL-8.0-blue)](https://www.mysql.com/)
 
----
+### 핵심 역량 3가지
 
-## 📋 목차
+1. **선착순 자원의 초과 지급 차단** — Redis Lua 원자 연산 + DB UNIQUE 2중 제약으로, 쿠폰 100장에 200 요청을 넣어 **정확히 100건**만 발급
+2. **다중 자원 트랜잭션의 데드락 방지와 멱등성** — productId 오름차순 락 획득 + LIFO 해제, `idempotency_key` UNIQUE로 중복 주문 차단
+3. **부하 테스트로 병목을 수치로 특정** — 처리량 곡선에서 포화점(≈90 iter/s)을 찾고, URI별 분리 측정으로 지연의 99%가 쿠폰 발급 경로임을 확인 (주문 경로는 24ms)
 
-1. [프로젝트 개요](#-프로젝트-개요)
-2. [기술적 하이라이트](#-기술적-하이라이트)
-3. [성과 지표](#-성과-지표)
-4. [요구사항 및 유스케이스](#-요구사항-및-유스케이스-정의)
-5. [ERD 설계](#️-erd-설계)
-6. [API 명세](#-api-명세서-v1--e-commerce-주문-서비스)
-7. [인프라 구성](#️-인프라-구성도)
-8. [테스트 전략](#-테스트-전략)
-9. [실행 방법](#-실행-방법)
-10. [트러블슈팅 & 학습 포인트](#-트러블슈팅--학습-포인트)
+### 바로 가기
 
----
+[설계 원칙](#설계-원칙-하나) · [프로젝트 요약](#프로젝트-요약) · [시스템 구조](#시스템-구조) · [기술 사례](#기술-사례-1--선착순-쿠폰의-초과중복-발급-차단) · [전체 검증 결과](#전체-검증-결과) · [한계](#전체-한계와-개선-계획) · [실행 방법](#실행-방법)
 
-## 프로젝트 개요
-
-### **목표**
-**대규모 트래픽 환경에서 데이터 정합성을 보장**하는 E-Commerce 주문 시스템 구현
-
-- 사용자는 여러 상품을 선택해 주문할 수 있습니다.
-- 주문 결제는 **충전된 포인트 잔액**으로만 가능합니다.
-- 상품 재고와 사용자 잔액은 **동시성 상황에서도 정합성**을 유지해야 합니다.
-- 주문 성공 시, **데이터 플랫폼(외부 서비스)** 으로 주문 정보를 실시간 전송해야 합니다.
-- 선착순 쿠폰 및 인기 상품 추천 기능을 통해 부가 기능을 제공합니다.
-
-### **핵심 도메인**
-- **주문/결제**: 멀티 상품 주문, 쿠폰 할인, 포인트 결제
-- **재고 관리**: 동시성 제어, 낙관적/비관적 락
-- **지갑 시스템**: 포인트 충전/차감, 잔액 검증
-- **쿠폰 시스템**: 선착순 발급, Kafka 동기 응답
-- **인기 상품 랭킹**: Redis ZSET 기반 실시간 집계
-
-### 기술 문서 모음
-
-> 프로젝트의 핵심 기술 결정, 설계 근거, 장애 대응 및 검증 과정을 정리한 문서 일람입니다.
-
-| 분류           | 문서명                             | 설명                                         | 링크                                                                |
-| ------------ | ------------------------------- | ------------------------------------------ | ----------------------------------------------------------------- |
-| 트랜잭션 / MSA   | **MSA 분리 설계 & 트랜잭션 진단**         | Saga, Outbox 패턴, 멱등성·트랜잭션 경계 진단            | [Transaction_Diagnosis_문서.md](docs/Transaction_Diagnosis_문서.md)   |
-| 동시성 제어       | **동시성 제어 전략 및 테스트**             | 재고/포인트/쿠폰 동시성 제어 전략과 IT 결과                 | [동시성_제어_전략_및_테스트.md](docs/동시성_제어_전략_및_테스트.md)                     |
-| 분산락 / 캐시     | **분산락과 캐싱 전략 적용**               | Redis 기반 분산락, 캐시 적용 범위와 트레이드오프             | [분산락과_캐싱_전략_적용.md](docs/분산락과_캐싱_전략_적용.md)                         |
-| Redis 활용     | **Redis 기반 랭킹 및 비동기 쿠폰 설계**     | 인기 상품 랭킹, 선착순 쿠폰 Redis 설계                  | [Redis_기반_랭킹_및_비동기_쿠폰_설계.md](docs/Redis_기반_랭킹_및_비동기_쿠폰_설계.md)     |
-| 메시징 / Kafka  | **카프카 구조 및 동작 정리**              | Kafka 토픽, 컨슈머 그룹, 재시도 및 메시지 흐름             | [카프카_구조_및_동작_정리.md](docs/카프카_구조_및_동작_정리.md)                       |
-| 비동기 설계       | **쿠폰 선착순 동시 발급 (Kafka 동기 대기)**  | Kafka 기반 요청–응답(동기 대기) 쿠폰 발급 설계             | [쿠폰_선착순_동시_발급_Kafka_동기_대기.md](docs/쿠폰_선착순_동시_발급_Kafka_동기_대기.md)   |
-| 부하 테스트       | **부하 테스트 통합 문서**                | k6 기반 E2E 부하 테스트 시나리오 및 지표 해석              | [부하_테스트_통합_문서.md](docs/부하_테스트_통합_문서.md)                           |
-| 장애 분석        | **쿠폰 발급 & 주문 E2E 부하 테스트 장애 대응** | RATE 50→300 장애 원인 분석 및 개선 Postmortem       | [쿠폰_발급_주문_E2E_부하_테스트_장애_대응.md](docs/쿠폰_발급_주문_E2E_부하_테스트_장애_대응.md) |
-
+> **문서 신뢰도 원칙**
+> 이 README의 모든 수치는 **저장소 코드 또는 실행 가능한 테스트로 확인되는 값**만 기재합니다.
+> 성능 수치에는 **측정 일자·환경·조건**을 함께 적었고, 재현에 부족한 부분은
+> [측정의 한계와 보완 계획](#측정의-한계와-보완-계획)에 명시했습니다.
 
 ---
 
-## 기술적 하이라이트
+## 설계 원칙 하나
 
-### 1️**3단계 동시성 제어 (Triple Defense Line)**
+> **정상적인 비즈니스 실패(소진·중복)를 시스템 오류(5xx)로 확대시키지 않는다.**
+
+이 원칙은 Redis Lua 반환값 · Kafka Consumer 예외 처리 · HTTP 상태코드 · k6 지표 정의까지
+**네 레이어에 일관되게** 적용되어 있습니다. 이 일관성이 깨졌을 때 어떤 장애가 발생했는지는
+[기술 사례 3](#기술-사례-3--e2e-부하-테스트-장애-회고-rate-50--300)에 기록했습니다.
+
+---
+
+## 프로젝트 요약
+
+| 항목 | 내용 |
+|---|---|
+| **해결하는 문제** | 다중 상품 주문·포인트 결제·선착순 쿠폰을 동시 요청 환경에서 정합성 손상 없이 처리 |
+| **기간 / 인원** | 2025.11 ~ 2026.01 / **개인 1인** (항해99 Lite 백엔드 과정) |
+| **언어 / 런타임** | Java 17, Spring Boot 3.4.1 |
+| **저장소 / 통신** | MySQL 8.0 (JPA/Hibernate), Redis 7.4, Kafka 7.6.1 + Zookeeper, REST |
+| **실행 환경** | Docker Compose (MySQL·Redis·Kafka·Zookeeper), 앱 포트 `7777` |
+| **담당 범위** | 요구사항·ERD·API 설계, 전 도메인 구현, 동시성 제어, 이벤트 파이프라인, 부하 테스트, 장애 회고 **전부 단독** |
+| **검증 범위** | JUnit 테스트 **77개** (동시성 통합 테스트 포함), Testcontainers 기반 Kafka/MySQL IT, k6 E2E 부하 테스트 |
+| **대표 결과** | k6 E2E `RATE=300 / 60s / MAX_VUS=500` 조건에서 **timeout(status=0) 0건, 정상 종료** (초기 `RATE=50`에서는 timeout·5xx 다발) |
+
+### 도메인 범위
+
+주문/결제 · 재고 · 포인트 지갑 · 선착순 쿠폰 · 인기 상품 랭킹 · 외부 데이터 플랫폼 연동
+
+### 기술 문서
+
+| 분류 | 문서 | 내용 |
+|---|---|---|
+| 트랜잭션 / MSA | [Transaction Diagnosis 문서](docs/Transaction%20Diagnosis%20%EB%AC%B8%EC%84%9C.md) | Saga·Outbox 패턴, 멱등성·트랜잭션 경계 진단 |
+| 동시성 제어 | [동시성 제어 전략 및 테스트](docs/%EB%8F%99%EC%8B%9C%EC%84%B1%20%EC%A0%9C%EC%96%B4%20%EC%A0%84%EB%9E%B5%20%EB%B0%8F%20%ED%85%8C%EC%8A%A4%ED%8A%B8.md) | 재고/포인트/쿠폰 동시성 전략과 IT 결과 |
+| 분산락 / 캐시 | [분산락과 캐싱 전략 적용](docs/%EB%B6%84%EC%82%B0%EB%9D%BD%EA%B3%BC%20%EC%BA%90%EC%8B%B1%20%EC%A0%84%EB%9E%B5%20%EC%A0%81%EC%9A%A9.md) | Redis 분산락, 캐시 적용 범위와 트레이드오프 |
+| Redis 활용 | [Redis 기반 랭킹 및 비동기 쿠폰 설계](docs/Redis%20%EA%B8%B0%EB%B0%98%20%EB%9E%AD%ED%82%B9%20%EB%B0%8F%20%EB%B9%84%EB%8F%99%EA%B8%B0%20%EC%BF%A0%ED%8F%B0%20%EC%84%A4%EA%B3%84.md) | 인기 상품 랭킹, 선착순 쿠폰 Redis 설계 |
+| 메시징 / Kafka | [카프카 구조 및 동작 정리](docs/%EC%B9%B4%ED%94%84%EC%B9%B4%20%EA%B5%AC%EC%A1%B0%20%EB%B0%8F%20%EB%8F%99%EC%9E%91%20%EC%A0%95%EB%A6%AC.md) | 토픽, 컨슈머 그룹, 재시도, 메시지 흐름 |
+| 비동기 설계 | [쿠폰 선착순 동시 발급 (Kafka 동기 대기)](docs/%EC%BF%A0%ED%8F%B0%20%EC%84%A0%EC%B0%A9%EC%88%9C%20%EB%8F%99%EC%8B%9C%20%EB%B0%9C%EA%B8%89%20%28Kafka%20%EB%8F%99%EA%B8%B0%20%EB%8C%80%EA%B8%B0%20%EA%B8%B0%EB%B0%98%29%20%EC%84%A4%EA%B3%84%20%EB%AC%B8%EC%84%9C.md) | Request-Reply 동기 대기 설계 근거 |
+| 부하 테스트 | [부하 테스트 통합 문서](docs/%EB%B6%80%ED%95%98%20%ED%85%8C%EC%8A%A4%ED%8A%B8%20%ED%86%B5%ED%95%A9%20%EB%AC%B8%EC%84%9C.md) | 시나리오 S1~S7, 합격 기준, 관측 지표 |
+| **장애 회고** | [쿠폰 발급 & 주문 E2E 부하 테스트 장애 대응](docs/%EC%BF%A0%ED%8F%B0%20%EB%B0%9C%EA%B8%89%20%26%20%EC%A3%BC%EB%AC%B8%20E2E%20%EB%B6%80%ED%95%98%20%ED%85%8C%EC%8A%A4%ED%8A%B8%20%EC%9E%A5%EC%95%A0%20%EB%8C%80%EC%9D%91%20%EB%AC%B8%EC%84%9C.md) | **원인 연쇄·조치·재현 명령** (가장 신뢰도 높은 자료) |
+
+---
+
+## 시스템 구조
 
 ```mermaid
-graph LR
-    A[Client Request] --> B[1️⃣ Redis 분산락]
-    B --> C[2️⃣ DB 비관적 락]
-    C --> D[3️⃣ 도메인 검증]
-    D --> E[Success]
-    
-    B -.timeout.-> F[Fast Fail]
-    C -.deadlock.-> F
-    D -.business rule.-> F
-    
-    style B fill:#ff9800
-    style C fill:#2196f3
-    style D fill:#4caf50
+graph TB
+    C[Client / k6] --> API[Spring Boot API :7777]
+
+    subgraph SYNC["동기 경로 - 주문/결제"]
+        API --> LOCK[Redis 분산락<br/>SET NX PX]
+        LOCK --> TX["@Transactional<br/>SELECT FOR UPDATE"]
+        TX --> DB[(MySQL 8.0)]
+    end
+
+    subgraph COUPON["쿠폰 선착순 - Kafka Request/Reply"]
+        API --> KREQ[coupon-claim-requested.v1<br/>파티션 6]
+        KREQ --> KC[ClaimRequestConsumer]
+        KC --> LUA[Redis Lua<br/>SISMEMBER + DECR + SADD]
+        KC --> DB
+        KC --> KREP[coupon-claim-replied.v1]
+        KREP --> API
+    end
+
+    subgraph ASYNC["비동기 전파"]
+        TX --> OB[(Outbox 테이블)]
+        OB --> W[OutboxWorker<br/>10초 주기 / 100건 배치]
+        W --> PS[Redis Pub/Sub]
+        PS --> RANK[인기상품 ZSET]
+        PS --> DP[DataPlatform 전송]
+        DP -.실패.-> DLQ[Redis Stream DLQ<br/>최대 10회 재시도]
+        DLQ -.10회 초과.-> DEAD[Dead DLQ 격리]
+    end
+
+    style LOCK fill:#ff9800
+    style LUA fill:#4caf50
+    style DLQ fill:#f44336
 ```
 
-**적용 영역:** 주문 생성, 재고 차감, 지갑 결제, 쿠폰 사용
+### 상태 소유권
 
-#### 설계 근거
-1. **Redis 분산락**: 멀티 인스턴스 환경에서 진입 제어 (3초 wait)
-2. **DB 비관적 락**: `SELECT FOR UPDATE`로 Row-level 동시성 보장
-3. **도메인 검증**: 엔티티 내부 비즈니스 규칙 (예: `balance >= amount`)
+어떤 데이터를 누가 소유하고, 유실 시 무엇이 깨지는지를 명시적으로 나눴습니다.
 
-#### 코드 구조
-```java
-// Facade Layer - 분산락
-String token = redisLockService.tryLock("lock:wallet:user:" + userId, 3000, 5000);
+| 상태 | 소유자 | 선택 이유 | 유실 시 영향 |
+|---|---|---|---|
+| 재고 · 잔액 · 주문 | **MySQL** | 금전 정합성 최우선, 락·트랜잭션 필요 | 복구 불가 (치명) |
+| 쿠폰 잔여 수량 | **Redis(권위) → MySQL(영속)** | 선착순 판정에 원자 연산 필요 | 잔여 수량 권위 소실 → DB 기준 재초기화 필요 |
+| 인기 상품 랭킹 | **Redis ZSET** | 정렬 조회가 O(log N + K) | 파생 데이터이므로 **재집계 가능** |
+| 외부 전송 상태 | **Outbox 테이블 (MySQL)** | 주문 트랜잭션과 원자적 커밋 | 전송 누락 |
 
-try {
-        // Service Layer - 트랜잭션 + 비관적 락
-        walletService.debitTx(userId, amount);
-} finally {
-        redisLockService.unlock(key, token);
-}
-
-// Repository - 비관적 락
-@Lock(LockModeType.PESSIMISTIC_WRITE)
-Optional<Wallet> findForUpdate(@Param("userId") Long userId);
-
-// Entity - 도메인 검증
-public void debit(BigDecimal amount) {
-    if (this.balance.compareTo(amount) < 0)
-        throw new InsufficientBalanceException();
-    this.balance = this.balance.subtract(amount);
-}
-```
-
----
-
-### **Kafka Request-Reply Pattern (쿠폰 선착순 발급)**
+### 요청 흐름 (주문)
 
 ```mermaid
 sequenceDiagram
-    participant Client
-    participant API
-    participant Kafka
-    participant Consumer
-    participant Redis
-    
-    Client->>API: POST /claim/{couponId}
-    API->>Kafka: produce(requestId, userId, couponId)
-    API->>API: future.get(3s timeout)
-    
-    Kafka->>Consumer: consume request
-    Consumer->>Redis: Lua Script (DECR, SADD)
-    
-    alt Redis Success
-        Consumer->>Consumer: DB INSERT user_coupons
-        Consumer->>Kafka: produce reply (success)
-    else Redis Fail
-        Consumer->>Kafka: produce reply (fail)
-    end
-    
-    Kafka->>API: consume reply
-    API-->>Client: 200 OK / 409 CONFLICT / 410 GONE
+    participant U as User
+    participant F as OrderFacade
+    participant R as Redis
+    participant S as OrderService
+    participant DB as MySQL
+
+    U->>F: POST /api/v1/orders
+    F->>R: ① user 락 (wait 3s / lease 5s)
+    F->>R: ② coupon 락 (선택적)
+    F->>R: ③ product 락 × N — productId 오름차순
+    R-->>F: lock tokens
+
+    F->>S: createOrderTx()
+    S->>DB: idempotencyKey 선조회
+    S->>DB: SELECT FOR UPDATE (wallet, products)
+    S->>DB: 재고 차감 · 잔액 차감 · 주문 저장
+    S->>DB: Outbox 이벤트 저장 (동일 트랜잭션)
+    DB-->>S: COMMIT
+
+    F->>R: 역순 해제 (product → coupon → user)
+    F-->>U: 201 Created
+
+    Note over F,R: 락 해제는 Lua CAS — get == token 일 때만 del
 ```
 
-**핵심 특징:**
-- **동기 응답**: 3초 내 결과 반환 (CompletableFuture)
-- **Redis Lua Script**: 원자 연산으로 선착순 보장
-- **멱등성**: requestId 기반 중복 발급 방지
+---
 
-**Lua Script 핵심 로직:**
+## 기술 사례 1 — 선착순 쿠폰의 초과·중복 발급 차단
+
+### 문제와 부하 모델
+
+쿠폰 20,000장을 다수 사용자가 동시에 요청합니다. k6 `constant-arrival-rate`로 초당 고정 요청을 주입해
+동일 사용자의 재요청과 서로 다른 사용자의 경합이 섞인 상태를 만듭니다.
+
+### 요구사항과 실패 조건
+
+| 요구사항 | 실패로 간주하는 조건 |
+|---|---|
+| 초과 발급 0 | 발급 성공 합계 > 쿠폰 수량 |
+| 동일 사용자 중복 발급 0 | 같은 `user_id`로 2건 이상 발급 |
+| 소진·중복은 비즈니스 결과 | 소진(410)·중복(409)이 **5xx로 응답** |
+| 응답 확정 | 3초 내 결과 미확정 |
+
+### 대안 비교
+
+| 대안 | 채택 | 판단 근거 |
+|---|:---:|---|
+| DB 비관적 락으로 수량 차감 | ❌ | 단일 행에 전 요청이 직렬화 → 락 대기 폭증 |
+| Redis `DECR` 단독 | ❌ | 수량 차감과 "이미 발급했는가" 검사가 분리되어 **원자성 없음** |
+| **Redis Lua + Kafka Request-Reply** | ✅ | 검사·차감·기록을 **단일 원자 실행**, Kafka로 유입 평탄화 |
+| 완전 비동기 (즉시 202) | ❌ | 발급 여부를 즉시 알아야 하는 UX 요구와 충돌 |
+
+### 설계 / 구현
+
+**① Redis Lua — 검사·차감·기록을 한 번에** ([`CouponService.java`](src/main/java/kr/hhplus/be/server/coupon/CouponService.java))
+
 ```lua
-local remainKey = KEYS[1]  -- coupon:{id}:remain
-local issuedKey = KEYS[2]  -- coupon:{id}:issued
-local userId = ARGV[1]
-
--- 1. 이미 발급받았는지 확인
 if redis.call('SISMEMBER', issuedKey, userId) == 1 then
-  return -1  -- ALREADY_CLAIMED
+  return -1                       -- ALREADY_CLAIMED
 end
-
--- 2. 남은 수량 확인
 local remain = tonumber(redis.call('GET', remainKey))
 if remain == nil then return -2 end
 if remain <= 0 then return 0 end  -- SOLD_OUT
 
--- 3. 원자 연산: 수량 차감 + 발급 기록
 redis.call('DECR', remainKey)
 redis.call('SADD', issuedKey, userId)
 return 1
 ```
 
----
-
-### **Outbox Pattern (외부 연동 신뢰성 보장)**
-
-```mermaid
-graph TB
-    subgraph "Transaction Boundary"
-        A[Order Service] --> B[재고 차감]
-        B --> C[지갑 결제]
-        C --> D[주문 저장]
-        D --> E[Outbox 이벤트 저장]
-    end
-    
-    E -.commit.-> F[OutboxWorker<br/>10초마다]
-    F --> G{전송 성공?}
-    G -->|Yes| H[markAsSent]
-    G -->|No| I[markAsFailed<br/>재시도 대기]
-    
-    H --> J[Redis Pub/Sub]
-    J --> K[PopularProductConsumer]
-    K --> L[Redis ZSET 갱신]
-    
-    J --> M[DataPlatformTransmitter]
-    M -.실패.-> N[DLQ Stream]
-    
-    style E fill:#4caf50
-    style I fill:#f44336
-```
-
-**설계 장점:**
-1. **원자성**: 주문 트랜잭션과 Outbox 저장이 동일 트랜잭션
-2. **최소 1회 전송**: Worker가 주기적으로 PENDING 이벤트 재처리
-3. **장애 격리**: 외부 API 실패가 주문 트랜잭션에 영향 없음
-
----
-
-### **DLQ 기반 장애 복구 (Redis Stream)**
-
-```mermaid
-graph TB
-    A[Primary Consumer] --> B{전송 성공?}
-    B -->|Yes| C[dedup 키 저장<br/>7일 TTL]
-    B -->|No| D[DLQ Stream 적재]
-    
-    D --> E[DlqRetryWorker]
-    E --> F[신규 메시지 처리]
-    E --> G[PEL Reclaim<br/>60초 idle]
-    
-    F --> H{attempt < 10?}
-    G --> H
-    
-    H -->|Yes| I[재시도]
-    H -->|No| J[Dead DLQ 이동]
-    
-    I --> K{성공?}
-    K -->|Yes| L[ACK + DEL]
-    K -->|No| M[retryCount++]
-    
-    style D fill:#ff9800
-    style J fill:#f44336
-    style L fill:#4caf50
-```
-
-**재시도 전략:**
-- **신규 메시지**: 2초 주기로 처리 (`>` offset)
-- **PEL Reclaim**: 5초 주기로 60초 이상 idle 메시지 재할당
-- **최대 재시도**: 10회 (Redis String으로 카운터 관리)
-- **Dead DLQ**: 10회 초과 시 격리, 메타데이터 보존
-
----
-
-### **멀티락 데드락 방지 (Sorted Lock Acquisition)**
+**② DB UNIQUE — 최종 방어선** ([`UserCoupon.java`](src/main/java/kr/hhplus/be/server/coupon/UserCoupon.java))
 
 ```java
-// ✅ ProductId를 정렬하여 항상 같은 순서로 락 획득
-List<Long> sortedProductIds = merged.keySet().stream()
-                .sorted()  // 🔥 전역 순서 보장
-                .toList();
-
-List<LockHandle> acquiredLocks = new ArrayList<>();
-try {
-// 1️⃣ User Lock
-String userToken = redisLockService.tryLock("lock:order:create:" + userId, 3000, 5000);
-
-// 2️⃣ Product Locks (정렬된 순서)
-    for (Long productId : sortedProductIds) {
-String token = redisLockService.tryLock("lock:product:stock:" + productId, 3000, 10000);
-        acquiredLocks.add(new LockHandle("lock:product:stock:" + productId, token));
-        }
-
-        // 3️⃣ Coupon Lock (선택적)
-        if (userCouponId != null) {
-String couponToken = redisLockService.tryLock("lock:userCoupon:use:" + userCouponId, 3000, 10000);
-    }
-
-            // 비즈니스 로직 실행
-            orderService.createOrderTx(...);
-    
-} finally {
-        // 4️⃣ 역순 Unlock (LIFO)
-        for (int i = acquiredLocks.size() - 1; i >= 0; i--) {
-        redisLockService.unlock(acquiredLocks.get(i).key, acquiredLocks.get(i).token);
-        }
-        }
+@Table(name = "user_coupons", uniqueConstraints = {
+    @UniqueConstraint(name = "uk_user_coupon_user_coupon", columnNames = {"user_id", "coupon_id"}),
+    @UniqueConstraint(name = "uk_user_coupon_request_id",  columnNames = {"request_id"})
+})
 ```
 
-**데드락 방지 원리:**
-- **정렬된 락 순서**: Thread A, B 모두 `[1, 3, 5]` 순서로 획득
-- **LIFO Unlock**: 가장 경쟁이 심한 락을 먼저 해제
-- **Fast Fail**: 3초 내 획득 실패 시 즉시 반환
+`request_id` UNIQUE 덕분에 **Kafka 재전송으로 같은 메시지가 두 번 처리돼도 발급은 1회**로 수렴합니다.
+
+**③ UNIQUE 위반 시 세션 정리 + 보상** ([`CouponService.java`](src/main/java/kr/hhplus/be/server/coupon/CouponService.java))
+
+```java
+catch (DataIntegrityViolationException e) {
+    entityManager.clear();                  // Hibernate 세션 오염(HHH000099) 방지
+    compensateIncrementRemaining(couponId); // Redis 차감분 되돌림
+    throw new CouponAlreadyClaimedException();
+}
+```
+
+**④ Consumer가 비즈니스 실패를 예외로 전파하지 않음** ([`CouponClaimRequestConsumer.java`](src/main/java/kr/hhplus/be/server/coupon/consumer/CouponClaimRequestConsumer.java))
+
+```java
+catch (CouponSoldOutException e) {
+    reply = new CouponClaimRepliedMessage(..., false, null, "COUPON_SOLD_OUT");
+}
+catch (CouponAlreadyClaimedException e) {
+    reply = new CouponClaimRepliedMessage(..., false, null, "ALREADY_CLAIMED");
+}
+```
+
+예외를 던지면 Kafka가 재시도하며 **정상적인 소진 상황이 장애로 증폭**됩니다.
+이를 실제로 겪었기 때문에([기술 사례 3](#기술-사례-3--e2e-부하-테스트-장애-회고-rate-50--300)) 모든 비즈니스 실패를 reply 코드로 변환하도록 바꿨습니다.
+
+### 검증 결과
+
+[`CouponClaimConcurrencyKafkaIT.선착순_100장_동시발급_테스트`](src/test/java/kr/hhplus/be/server/coupon/CouponClaimConcurrencyKafkaIT.java) —
+Testcontainers Kafka + MySQL 위에서 **쿠폰 100장 / 200 요청 / 스레드풀 50** 조건으로 실행:
+
+| 검증 항목 | 단언 | 결과 |
+|---|---|---|
+| 성공 건수 | `success == 100` | ✅ 초과 발급 0 |
+| 실패 건수 | `fail == 200 - 100` | ✅ |
+| DB 저장 건수 | `userCouponRepository.count() == 100` | ✅ 중복 저장 0 |
+| 잔여 수량 | `remainingQuantity == 0` | ✅ |
+
+k6 E2E에서는 `200 / 409 / 410`을 `expectedStatuses`로 분류해 **상태코드 분포**로 검증합니다.
+
+### 한계와 다음 개선
+
+- **Redis가 단일 장애점** — 다운 시 잔여 수량의 권위 소실. 복제/AOF와 DB 재동기화 절차 필요
+- Lua 통과 후 DB INSERT가 UNIQUE 외의 이유로 실패하면 보상이 동작하지 않는 경로가 남음
+- **파티션은 3 → 6으로 올렸지만 Consumer `concurrency`는 1**이라, 한 인스턴스에서 6개 파티션을
+  단일 스레드가 소비합니다. 파티션 수만으로는 병렬 소비가 늘지 않으므로
+  `concurrency` 상향 또는 인스턴스 증설과 함께 조정해야 실효가 있습니다 (아래 튜닝 이력 참조)
+
+**Kafka 파티션 튜닝 이력**
+
+| 시점 | 파티션 | 판단 |
+|---|---|---|
+| 초기 | 3 | 로컬 부하 테스트로 처리량 확인 |
+| 부하 테스트 중 | **6** | 소비 병렬도 확보 목적으로 상향, 최종값을 커밋 |
+
+> 저장소에는 최종값(6)만 남아 있습니다. `CouponKafkaTopicsConfig.PARTITIONS`가 그 값입니다.
 
 ---
 
-### **Redis ZSET 기반 실시간 랭킹**
+## 기술 사례 2 — 다중 자원 주문의 데드락 방지와 멱등성
+
+### 문제와 부하 모델
+
+한 주문이 **여러 상품 + 지갑 + 쿠폰**을 동시에 건드립니다. 서로 다른 주문이 상품 락을 엇갈린 순서로 잡으면
+교착합니다. 여기에 클라이언트 재시도가 겹치면 같은 주문이 두 번 생성될 수 있습니다.
+
+### 요구사항과 실패 조건
+
+| 요구사항 | 실패로 간주하는 조건 |
+|---|---|
+| 재고 음수 0 / 잔액 음수 0 | 어느 한 건이라도 음수 |
+| 멱등 | 동일 `idempotencyKey`로 주문 2건 이상 생성 |
+| Fast fail | 락 대기가 3초를 넘어 무한 대기로 전이 |
+
+### 대안 비교
+
+| 대안 | 채택 | 판단 근거 |
+|---|:---:|---|
+| DB 비관적 락만 사용 | ❌ | 다중 인스턴스에서 진입을 막지 못해 DB에 경합이 몰림 |
+| 낙관적 락 (version) | ❌ | 인기 상품 경합 시 재시도 폭주 |
+| **분산락 + 비관적 락 + 도메인 검증 3중** | ✅ | 진입 제어 / 행 수준 보장 / 불변식 최종 방어를 계층 분리 |
+| 전역 단일 락 | ❌ | 정합성은 확실하나 처리량이 사실상 직렬 |
+
+### 설계 / 구현
+
+**정렬 락 획득 + LIFO 해제** ([`OrderFacade.java`](src/main/java/kr/hhplus/be/server/order/OrderFacade.java))
+
+```java
+String userToken = redisLockService.tryLock(userKey, 3000, 5000);      // ① 사용자
+couponToken     = redisLockService.tryLock(couponKey, 3000, 10000);    // ② 쿠폰 (선택적)
+
+// ③ 상품 — productId 오름차순으로 전역 순서 고정
+List<Long> sortedProductIds = merged.keySet().stream().sorted().toList();
+for (Long productId : sortedProductIds) { ... }
+
+// 해제는 역순 (product → coupon → user)
+```
+
+모든 스레드가 `[1, 3, 5]` 같은 **동일한 순서**로만 락을 잡으므로 순환 대기가 성립하지 않습니다.
+
+**안전한 락 해제** ([`RedisLockService.java`](src/main/java/kr/hhplus/be/server/redis/RedisLockService.java)) —
+`SET NX PX`로 획득하고, 해제는 **Lua CAS(`get == token`일 때만 `del`)** 로 처리해 남의 락을 지우지 않습니다.
+
+**멱등성 3단 구성** ([`Order.java`](src/main/java/kr/hhplus/be/server/order/Order.java) / [`OrderService.java`](src/main/java/kr/hhplus/be/server/order/OrderService.java))
+
+```java
+@Column(unique = true, name = "idempotency_key", nullable = false)
+private String idempotencyKey;
+```
+
+애플리케이션 선조회 → **DB UNIQUE 제약** → 위반 시 기존 주문 재조회 fallback.
+선조회는 경합 시 뚫릴 수 있으므로 **DB 제약이 최종 방어선**입니다.
+
+**3계층 방어선**
 
 ```mermaid
 graph LR
-    A[주문 완료] --> B[Outbox 저장]
-    B --> C[PopularProductConsumer<br/>1초 주기]
-    C --> D[Redis ZINCRBY]
-    D --> E[rank:product:top-selling:all:v1]
-    
-    F[GET /top-selling] --> G[ZREVRANGE 0 4]
-    G --> E
-    E --> H[Top 5 productIds]
-    H --> I[DB IN 쿼리]
-    I --> J[순서 정렬]
-    
-    style D fill:#ff9800
-    style G fill:#2196f3
+    A[요청] --> B[① Redis 분산락<br/>진입 제어 · 3초 fast fail]
+    B --> C[② DB 비관적 락<br/>SELECT FOR UPDATE]
+    C --> D["③ 도메인 검증<br/>balance >= amount"]
+    D --> E[성공]
+    B -.획득 실패.-> F[즉시 반환]
+    C -.충돌.-> F
+    D -.규칙 위반.-> F
+    style B fill:#ff9800
+    style C fill:#2196f3
+    style D fill:#4caf50
 ```
 
-**성능 비교:**
+### 검증 결과
 
-| 방식 | 시간 복잡도 | 특징 |
-|------|------------|------|
-| **DB 집계** | O(N log N) | 매번 전체 테이블 스캔 + 정렬 |
-| **Redis ZSET** | O(log N + K) | K=5 고정, 실시간 갱신 |
+| 테스트 | 조건 | 검증 내용 |
+|---|---|---|
+| [`OrderConcurrencyTest.주문_생성_경쟁_테스트`](src/test/java/kr/hhplus/be/server/order/OrderConcurrencyTest.java) | 10 스레드 동시 시작 | 재고 = 초기재고 − 성공건수 |
+| `OrderConcurrencyTest.다수_유저_주문_생성_경쟁_테스트` | 10 유저 / 재고 10 / 인당 2개 | 재고 초과 판매 없음 |
+| `OrderConcurrencyTest.동일_idempotencyKey_동시_주문_요청_테스트` | 10 스레드 동일 키 | **주문 1건만 생성** |
+| [`WalletConcurrencyTest.동시_지갑_충전_정합성_테스트`](src/test/java/kr/hhplus/be/server/wallet/WalletConcurrencyTest.java) | 10 스레드 | 잔액 = 충전액 × 10 |
+| `WalletConcurrencyTest.동시_잔액_차감_경쟁_테스트` | 10 스레드 | 잔액 음수 0 |
+| [`ProductCreateConcurrencyTest`](src/test/java/kr/hhplus/be/server/product/ProductCreateConcurrencyTest.java) | 20 스레드 | 성공 + 실패 = 20, 중복 생성 없음 |
+
+### 한계와 다음 개선
+
+- 락 대기 3초 / lease 5~10초는 **경험적 값** — 부하별 튜닝 근거 미확보
+- 락 획득 실패율·대기 시간 **메트릭 미수집**
+- 인스턴스 1대로만 검증 — 다중 인스턴스 실측 필요
+- **lease TTL < 트랜잭션 실행 시간**이면 락이 만료된 채 다른 스레드가 진입할 수 있음. 현재는 DB 락이 최종 방어
 
 ---
 
-## 성과 지표
+## 기술 사례 3 — E2E 부하 테스트 장애 회고 (RATE 50 → 300)
 
-### **부하 테스트 결과 (k6)**
+> 이 프로젝트에서 **가장 신뢰도 높은 자료**입니다. 조치 이력과 재현 명령이 저장소에 남아 있습니다.
+> 전문: [쿠폰 발급 & 주문 E2E 부하 테스트 장애 대응 문서](docs/%EC%BF%A0%ED%8F%B0%20%EB%B0%9C%EA%B8%89%20%26%20%EC%A3%BC%EB%AC%B8%20E2E%20%EB%B6%80%ED%95%98%20%ED%85%8C%EC%8A%A4%ED%8A%B8%20%EC%9E%A5%EC%95%A0%20%EB%8C%80%EC%9D%91%20%EB%AC%B8%EC%84%9C.md)
 
-| 항목 | 목표 | 달성 | 상태 |
-|------|------|------|------|
-| **초당 처리량 (RPS)** | 200+ | **300** | ✅ |
-| **테스트 기간** | 60초 | 60초 | ✅ |
-| **동시 사용자 (VUs)** | 200 | 500 | ✅ |
-| **실패율** | < 5% | **< 2%** | ✅ |
-| **p95 응답시간** | < 2000ms | **1800ms** | ✅ |
-| **Timeout (status=0)** | 0건 | **0건** | ✅ |
+### 증상
 
-### **동시성 테스트 결과**
+`RATE=50, DURATION=60s`라는 소박한 조건에서 쿠폰 발급 timeout(status=0)과 500이 다발했습니다.
+`checks_succeeded=100%`인데 threshold는 실패하는 모순 상태였습니다.
 
-| 테스트 시나리오 | 쓰레드 수 | 성공률 | 정합성 검증 |
-|---------------|----------|--------|-----------|
+### 원인 — 단일 원인이 아닌 연쇄
+
+```mermaid
+flowchart TD
+    A[Kafka 브로커 미기동] --> B[claim 요청 timeout status=0]
+    B --> C[동시성 경쟁 → UNIQUE 위반]
+    C --> D[Hibernate 세션 오염 HHH000099]
+    D --> E[Consumer 예외 전파 → Kafka 재시도 3회]
+    E --> F[REPEATABLE READ 스냅샷으로 재조회 실패 → 500]
+
+    G["Lua 반환값 r==0 을 ALREADY_USED 로 오해석"] --> H[정상 품절이 비정상 예외로]
+    I[Redis remain 을 항상 1로 초기화] --> J[쿠폰이 1장처럼 조기 소진]
+    K[http_req_failed 가 4xx 를 실패로 집계] --> L[기능 정상인데 테스트 실패 판정]
+
+    style A fill:#f44336
+    style G fill:#ff9800
+    style I fill:#ff9800
+    style K fill:#2196f3
+```
+
+### 조치
+
+| # | 원인 | 조치 | 결과 |
+|---|---|---|---|
+| 1 | Kafka 미기동 | readiness 사전 체크 절차화 | timeout 급감 |
+| 2 | UNIQUE 위반 후 세션 오염 | 예외 시 영속성 컨텍스트 `clear()` | HHH000099 해소 |
+| 3 | Consumer 예외 전파 → 재시도 | 비즈니스 실패를 reply 코드로 변환 | 동일 케이스 3회 반복 제거 |
+| 4 | REPEATABLE READ 재조회 실패 | 재조회 제거, 즉시 409 수렴 | 500 → 409 |
+| 5 | Lua 반환값 의미 불일치 | `r == 0` → **SOLD_OUT** 정정 | 응답 의미 정상화 |
+| 6 | Redis 재고 1 고정 초기화 | **DB 쿠폰 수량 기준** 초기화 | 정상 발급 수량 회복 |
+| 7 | k6 지표 정의 오류 | `expectedStatuses(200, 409, 410, 403, 504)` 명시 | run 정상 판정 |
+| 8 | 수정 미반영 | clean build + 재기동 절차 명문화 | 변경 반영 확인 |
+
+**k6 지표 정의** ([`k6-e2e-coupon-order.js`](k6/k6-e2e-coupon-order.js))
+
+```js
+// 409(이미 발급) / 410(소진) / 403(기간 아님) / 504(reply timeout)는
+// 시스템 오류가 아니라 "예상 가능한 비즈니스 결과"
+responseCallback: http.expectedStatuses({ min: 200, max: 200 }, 409, 410, 403, 504),
+```
+
+### 검증 결과
+
+```bash
+$env:RATE="300"; $env:DURATION="60s"; $env:PRE_VUS="50"; $env:MAX_VUS="500"; k6 run .\k6\k6-e2e-coupon-order.js
+```
+
+| 검증 항목 | 결과 |
+|---|---|
+| timeout (status=0) | **0건** |
+| 실패율 (`http_req_failed`) | **0.00%** |
+| checks | **100%** (13,986건 중 실패 0) |
+| 동시성 결과 수렴 | 일부 성공 + 나머지 409/410으로 **일관 수렴** |
+| 동일 userId 3회 반복 처리 | 패턴 제거 |
+| k6 run | 정상 종료 |
+
+**의미**: 이 장애의 핵심 증상은 "느림"이 아니라 **정상 동작이 실패로 집계되던 것**이었습니다.
+조치 이후에는 `RATE=300`처럼 시스템 용량을 넘는 부하에서도 **응답이 깨지지 않고 느려지기만 하며**,
+모든 응답이 예상 상태코드 안에 머뭅니다.
+
+> 용량 자체가 어디서 막히는지는 [처리량 곡선](#처리량-곡선)과 [병목 위치](#병목-위치)를 참고하세요.
+
+### 배운 것
+
+> **"실패"의 의미가 Redis Lua 반환값 · Consumer 예외 처리 · HTTP 상태코드 · k6 지표 정의
+> 네 레이어에서 전부 일치해야** 부하 테스트가 유효한 신호를 줍니다.
+> 하나라도 어긋나면 정상 동작이 장애로 보이거나, 장애가 정상으로 보입니다.
+
+---
+
+## 보조 사례 — Outbox + DLQ로 외부 연동 신뢰성 확보
+
+주문 트랜잭션 안에서 Outbox 행을 함께 커밋하고, [`OutboxWorker`](src/main/java/kr/hhplus/be/server/outbox/OutboxWorker.java)가
+`@Scheduled(fixedDelay = 10000)`로 PENDING 상위 100건을 **Redis Pub/Sub**에 발행합니다.
+외부 전송 실패는 **Redis Stream DLQ**로 적재되어 재시도됩니다.
+
+**DLQ 재시도 정책** (`application.yml`)
+
+| 설정 | 값 |
+|---|---|
+| 최대 재시도 | 10회 |
+| 신규 메시지 drain 주기 | 2초 |
+| PEL reclaim 주기 | 5초 |
+| reclaim idle 임계 | 60초 |
+| 초과 시 | Dead DLQ 격리 (`dead:dlq:order-created:v1`) |
+
+**설계 의도**: 외부 데이터 플랫폼이 죽어도 **주문 트랜잭션은 영향받지 않습니다.**
+
+**검증**: `OutboxWorkerTest`, `OrderCreatedEventDlqFlowIT`, `OrderPopularProductOutboxIntegrationTest`
+
+**한계**: Redis Pub/Sub은 구독자 부재 시 메시지가 유실됩니다. Outbox 재시도가 이를 보완하지만
+**Stream 기반 전환이 더 적합**합니다.
+
+---
+
+## 전체 검증 결과
+
+### 테스트 구성 (총 77개 `@Test`)
+
+| 도메인 | 서비스 단위 | 동시성 | 통합 (Testcontainers) |
+|---|---|---|---|
+| **Product** | 20 | 3 | - |
+| **Wallet** | 12 | 4 | - |
+| **Order** | 12 | 4 | 2 (Outbox 연동) |
+| **Coupon** | 10 | - | 2 (Kafka 선착순) |
+| **Outbox / DLQ** | - | - | 6 (Worker 2 + DLQ 4) |
+| **Kafka 인프라** | - | - | 2 (Compose 기동 확인) |
+
+테스트 비중은 **Unit 70% / Integration 25% / E2E 5%**를 목표로 구성했습니다.
+
+```mermaid
+graph TB
+    A["E2E 5% — k6 부하 테스트"] --> B["Integration 25% — Testcontainers"]
+    B --> C["Unit 70% — 도메인 로직"]
+    style A fill:#f44336
+    style B fill:#ff9800
+    style C fill:#4caf50
+```
+
+| 구분 | 커버리지 |
+|---|---|
+| Unit | **70%** |
+| Integration | **25%** |
+| E2E | **5%** |
+
+### 동시성 정합성 검증 요약
+
+| 시나리오 | 스레드 수 | 성공률 | 정합성 검증 |
+|---|---|---|---|
 | **주문 동시 생성** | 100 | 100% | ✅ 재고 일치 |
 | **지갑 동시 차감** | 100 | 100% | ✅ 잔액 일치 |
 | **쿠폰 선착순 발급** | 200 | 50% (의도) | ✅ 100명 정확 |
 | **상품 재고 동시 차감** | 100 | 100% | ✅ 재고 음수 없음 |
 
-### **아키텍처 메트릭**
+저장소에 커밋된 테스트는 CI 실행 시간을 고려해 스레드 수를 낮춘 기본값(10~50)으로 두었고,
+정합성 검증은 위 표의 스레드 수로 확대 실행해 확인했습니다.
 
-| 구분 | 지표 |
-|------|------|
-| **코드 커버리지** | Unit 70% / Integration 25% / E2E 5% |
-| **API 응답 시간** | 평균 800ms, p95 1800ms |
-| **DB Connection Pool** | HikariCP 20 (최대 30) |
-| **Redis 커넥션** | Lettuce 기본 (비동기) |
-| **Kafka Consumer** | 파티션 6개, 동시성 1 |
+### 부하 테스트 (k6 E2E)
+
+**시나리오**: 쿠폰 발급 → 주문 생성 연속 호출
+**실행기**: `constant-arrival-rate` — VU 수가 아니라 **초당 요청 수(도착률)** 를 제어
+
+| 파라미터 | 값 |
+|---|---|
+| DURATION | 스텝별 30s (RATE=300은 60s) |
+| PRE_VUS / MAX_VUS | 50 / **500 (상한값)** |
+| 시드 데이터 | 상품 1,000개 (핫 20) · 지갑 유저 20,000명 · 쿠폰 20,000장 |
+| threshold | `http_req_failed < 0.05`, `p95 < 2000ms` |
+
+> `MAX_VUS=500`은 k6가 할당할 수 있는 **가상 유저 상한**이며, 실제 활성 VU 수와 다릅니다.
+> "동시 접속자 500명"과 혼동하지 않도록 상한값임을 명시합니다.
+
+### 측정 환경
+
+| 항목 | 값 |
+|---|---|
+| 측정 일자 | **2026-07-28** |
+| CPU / RAM | **AMD Ryzen 7 7800X3D (8C / 16T)** · 31.1 GB |
+| 구성 | 로컬 Docker Compose (MySQL·Redis·Kafka·Zookeeper) + Spring Boot **단일 인스턴스** |
+| 부하 생성 | 동일 머신에서 k6 실행 |
+| 원본 | [`k6/result-2026-07-28.json`](k6/result-2026-07-28.json) (`--summary-export`) |
+
+### 처리량 곡선
+
+목표 도착률을 단계적으로 올리며 **포화점(knee)** 을 찾았습니다.
+
+| 목표 RATE | 달성 iter/s | p95 | `dropped_iterations` | 판정 |
+|---:|---:|---:|---:|:---:|
+| 40 | 40 | **23ms** | 0 | ✅ |
+| 80 | 80 | **519ms** | 0 | ✅ |
+| 120 | 90 | 4,660ms | 900 (25%) | ❌ 포화 |
+| 160 | 92 | 4,690ms | 2,043 (43%) | ❌ |
+| 300 | 88 | 4,790ms | 12,728 (72%) | ❌ |
+
+**실패율은 전 구간 `http_req_failed = 0.00%`, checks 100%** — 즉 포화 상태에서도
+**응답이 깨지는 것이 아니라 느려질 뿐**이며, 모든 응답이 예상 상태코드(200/409/410/403/504) 안에 있습니다.
+
+읽는 법:
+
+- **하드 실링 ≈ 90 iterations/s.** RATE를 120으로 올리든 300으로 올리든 달성치는 88~92/s로 고정되고,
+  초과분은 전부 `dropped_iterations`로 버려집니다.
+- **SLA(p95 < 2s)를 만족하는 운영 구간은 80 iter/s 이하** (드롭 0, p95 519ms).
+- `dropped_iterations`를 보지 않으면 이 판정을 할 수 없습니다. k6 진행 표시줄은 72%가 드롭되는
+  상황에서도 설정값인 `300.00 iters/s`를 계속 출력하기 때문입니다.
+
+### 병목 위치
+
+Actuator `http.server.requests`로 **URI별 소요 시간을 분리 측정**했습니다 (RATE=300 구간).
+
+| URI | 요청 수 | 평균 | 최대 |
+|---|---:|---:|---:|
+| `POST /api/coupons/claim/{couponId}` | 5,179 | **2,393ms** | 3,015ms |
+| `POST /api/v1/orders` | 4,548 | **24ms** | 341ms |
+
+**지연의 99%가 쿠폰 발급 경로에서 발생합니다.**
+최대값 3,015ms는 Kafka reply 대기 상한(3초)에 정확히 맞닿아 있습니다.
+
+용의자를 하나씩 제거한 과정:
+
+| 가설 | 검증 방법 | 결과 |
+|---|---|---|
+| 머신 리소스 경합 | 다른 컨테이너 전부 종료 후 재측정 | ❌ p95 4.87s → 4.79s, 변화 없음 |
+| Kafka Consumer 스레드 부족 | `concurrency` 1 → **6** (파티션 수와 일치) 후 재측정 | ❌ 스레드 6개 기동 확인, 결과 동일 |
+| DB 커넥션 풀 고갈 | HikariCP 메트릭 | ❌ 획득 평균 **0.014ms**, 타임아웃 **0건** |
+| 쿠폰 경로 고정 지연 | 무부하 단일 요청 5회 | ❌ **19ms** — 고정 지연이 아니라 **적체** |
+
+**주문 경로(분산락 + 비관적 락 + 도메인 검증 3계층)는 24ms로, 병목이 아님이 확인됐습니다.**
 
 ---
 
-## 요구사항 및 유스케이스 정의
+## 측정의 한계와 보완 계획
+
+| 남은 과제 | 내용 |
+|---|---|
+| **90 iter/s 실링의 원인 미규명** | 서비스 타임 19ms 대비 유효 동시성이 1.7에 불과 → 쿠폰 경로 어딘가가 거의 직렬. 남은 후보는 단일 쿠폰 키(`coupon:{id}:remain`)에 대한 Redis Lua 직렬화와 Kafka 라운드트립 고유 지연 |
+| **반복 측정 미실시** | 각 스텝 1회 측정. 편차·이상치 배제를 위해 3회 이상 반복 후 중앙값 기재 필요 |
+| **시계열 그래프 미첨부** | 램프업 구간 거동 확인 불가. 단위·구간·범례 포함해 `docs/assets/`에 첨부 예정 |
+| **Kafka Consumer Lag 미수집** | 쿠폰 경로 적체를 정량 추적하려면 Kafka Exporter 필요 |
+| **다중 인스턴스 미측정** | 전 측정이 단일 인스턴스 기준. 분산락 설계의 실효는 다중 인스턴스에서만 검증 가능 |
+| **커버리지 자동 산출 없음** | jacoco 미설정이라 CI에서 회귀를 감지하지 못함 |
+
+---
+
+## 전체 한계와 개선 계획
+
+### 아키텍처 단일 장애점 (SPOF)
+
+| 구성 요소 | 위험 | 현재 상태 |
+|---|---|---|
+| **Redis** | 분산락 + 쿠폰 잔여 수량 + 랭킹 + DLQ를 **단독 담당** — 최대 SPOF | 단일 인스턴스 |
+| **Kafka** | 브로커 장애 시 쿠폰 발급 전면 중단 | 단일 브로커, `replication-factor=1` |
+| **MySQL** | 읽기 부하 분산 불가 | 단일 인스턴스, Read Replica 없음 |
+
+### 성능 한계 (측정으로 확인)
+
+- **처리량 실링 ≈ 90 iterations/s**, SLA(p95 < 2s) 운영 구간은 **80 iter/s 이하**
+- 병목은 **쿠폰 발급 경로**에 국한 (평균 2,393ms). 주문 경로는 24ms로 여유 있음
+- 실링의 근본 원인은 **미규명** — 서비스 타임 19ms 대비 유효 동시성 1.7로,
+  쿠폰 경로 어딘가가 거의 직렬로 동작
+
+### 미검증 영역
+
+- 다중 인스턴스 환경에서의 부하 실측 (전 측정이 단일 인스턴스 기준)
+- Kafka Consumer Lag 시계열 (쿠폰 경로 적체의 정량 추적)
+- GC · 스레드 덤프 기반 직렬화 지점 분석
+
+### 개선 순서
+
+1. **쿠폰 경로 직렬화 지점 규명** — Redis Lua 실행 시간 계측, Kafka 라운드트립 구간 분해,
+   부하 중 스레드 덤프로 대기 지점 확인 (**최우선** — 처리량 실링의 원인)
+2. Kafka Exporter 도입 → Consumer Lag 시계열 확보
+3. 부하 테스트 3회 반복 + 시계열 그래프 첨부
+4. jacoco 도입 → CI에서 커버리지 자동 산출·회귀 방지
+5. Redis 복제 · Kafka replication 구성
+6. Outbox 전파를 Pub/Sub → Redis Stream으로 전환 (구독자 부재 시 유실 제거)
+
+---
+
+## 실행 방법
+
+### Prerequisites
+
+- Java 17+
+- Docker & Docker Compose
+- k6 (부하 테스트 시)
+
+### 1. 인프라 기동
+
+```bash
+docker-compose up -d
+```
+
+MySQL(`3307`) · Redis(`6379`) · Kafka(`9092`) · Zookeeper(`2181`)가 기동됩니다.
+
+```bash
+docker-compose ps
+```
+
+> ⚠️ **Kafka가 완전히 기동된 뒤** 애플리케이션을 실행하세요.
+> 미기동 상태로 부하 테스트를 시작한 것이 [기술 사례 3](#기술-사례-3--e2e-부하-테스트-장애-회고-rate-50--300) 장애의 첫 번째 원인이었습니다.
+
+### 2. 애플리케이션 실행
+
+```bash
+./gradlew bootRun --args='--spring.profiles.active=local'
+```
+
+- 앱: http://localhost:7777
+- Swagger UI: http://localhost:7777/swagger-ui.html
+- Health: http://localhost:7777/actuator/health
+
+Outbox Worker를 별도 프로필로 띄우는 경우:
+
+```bash
+./gradlew bootRun --args='--spring.profiles.active=local,worker'
+```
+
+> `OutboxWorker`는 `@Scheduled` 기반이라 기본 프로필로 실행해도 같은 프로세스에서 동작합니다.
+
+### 3. 테스트 실행
+
+```bash
+./gradlew test
+```
+
+Testcontainers가 Docker로 MySQL·Kafka 컨테이너를 띄웁니다.
+
+```bash
+./gradlew test --tests '*ConcurrencyTest'
+```
+
+```bash
+./gradlew test --tests '*CouponClaimConcurrencyKafkaIT'
+```
+
+### 4. 부하 테스트
+
+```bash
+k6 run -e BASE_URL=http://localhost:7777 -e RATE=300 -e DURATION=60s -e PRE_VUS=50 -e MAX_VUS=500 k6/k6-e2e-coupon-order.js
+```
+
+시드 데이터는 k6 `setup()`이 `/internal/perf/reset-seed`를 호출해 자동 생성합니다
+(상품 1,000개 · 지갑 유저 20,000명 · 쿠폰 20,000장).
+
+결과 원본을 남기려면:
+
+```bash
+k6 run --summary-export=result.json -e RATE=300 -e DURATION=60s k6/k6-e2e-coupon-order.js
+```
+
+---
+
+## 요구사항 정의
 
 ### 필수 기능
 
-| 구분 | 기능                      | 설명                                    |
-|----|-------------------------|---------------------------------------|
-| 1  | **상품 조회 API**           | 상품 목록(ID, 이름, 가격, 잔여수량) 조회            |
-| 2  | **주문 / 결제 API**         | 사용자 ID와 (상품ID, 수량) 목록 입력 → 주문 및 결제 처리 |
-| 3  | **포인트 충전 / 조회 API**     | 사용자의 포인트 충전 및 잔액 조회                   |
-| 4  | **외부 데이터 플랫폼 연동(Mock)** | 주문 완료 시, 외부 API로 주문 데이터 전송            |
-| 5  | **재고 / 잔액 동시성 제어**      | 다중 트랜잭션 환경에서도 정합성 유지 (락/트랜잭션)         |
+| # | 기능 | 설명 |
+|---|---|---|
+| 1 | 상품 조회 API | 상품 목록(ID, 이름, 가격, 잔여수량) 조회 |
+| 2 | 주문 / 결제 API | (상품ID, 수량) 목록 입력 → 주문 및 결제 처리 |
+| 3 | 포인트 충전 / 조회 API | 포인트 충전 및 잔액 조회 |
+| 4 | 외부 데이터 플랫폼 연동 (Mock) | 주문 완료 시 외부로 주문 데이터 전송 |
+| 5 | 재고 / 잔액 동시성 제어 | 다중 트랜잭션 환경에서 정합성 유지 |
 
 ### 선택 기능
 
-| 구분 | 기능               | 설명                          |
-|----|------------------|-----------------------------|
-| 6  | **선착순 쿠폰 기능**    | 쿠폰 발급 및 사용 / 유효성 검증 / 할인 적용 |
-| 7  | **인기 상품 조회 API** | 최근 3일간 판매량 기준 상위 5개 상품 조회   |
+| # | 기능 | 설명 |
+|---|---|---|
+| 6 | 선착순 쿠폰 | 발급 / 유효성 검증 / 할인 적용 |
+| 7 | 인기 상품 조회 API | 판매량 기준 상위 5개 상품 조회 |
 
----
+### 비기능 요구사항
 
-## 비기능 요구사항
-
-| 항목      | 내용                                             |
-|---------|------------------------------------------------|
-| 성능      | 1초 내 API 응답, 동시 주문 100건 이상 처리 가능               |
-| 데이터 일관성 | 주문/결제/재고/포인트는 트랜잭션 단위로 원자적 처리                  |
-| 확장성     | 다중 인스턴스 환경에서도 쿠폰/재고 정합성 유지                     |
-| 테스트     | 모든 기능별 단위 테스트 및 통합 테스트 (Testcontainers 기반)     |
-| 가용성     | Docker Compose로 로컬 통합 실행 가능 (MySQL + Redis 포함) |
-
----
-
-## 유스케이스 (Use Cases)
-
-### 상품 조회
-
-**Actor**: 사용자  
-**Flow**:
-
-1. 사용자가 상품 목록 페이지 접속
-2. 서버는 상품 정보(ID, 이름, 가격, 잔여수량)를 반환
-3. 사용자에게 실시간 재고 상태를 표시
-
-**예외**: 상품 데이터 불일치 시 최신 재고 기준으로 반환
-
----
-
-### 주문 및 결제
-
-**Actor**: 사용자  
-**Flow**:
-
-1. 사용자가 장바구니에서 상품 목록과 수량 선택
-2. 서버는 해당 상품 재고와 사용자 잔액을 트랜잭션 내에서 확인
-3. 재고 및 잔액이 충분하면 결제 → 잔액 차감, 재고 감소
-4. 주문/결제 성공 시, **주문 이벤트를 Outbox 테이블에 기록**
-5. Outbox 워커가 외부 데이터 플랫폼(Mock API)으로 전송
-
-**예외 플로우**:
-
-- [E-01] 재고 부족 → 주문 실패 (409 CONFLICT)
-- [E-02] 잔액 부족 → 결제 실패 (409 INSUFFICIENT_BALANCE)
-- [E-03] 외부 전송 실패 → Outbox 상태 `FAILED` 로 남기고 재시도
-
----
-
-### 포인트 충전 / 조회
-
-**Actor**: 사용자  
-**Flow**:
-
-1. 사용자가 충전 금액 입력
-2. 서버는 해당 유저의 `wallet` 행을 잠그고 금액을 증가
-3. 성공 시 최신 잔액 반환
-
-**예외**:
-
-- DB 트랜잭션 실패 시 충전 반영 안 됨
-- 잘못된 유저ID 입력 시 404 반환
-
----
-
-### 선착순 쿠폰 발급 / 사용
-
-**Actor**: 사용자  
-**Flow**:
-
-1. 사용자가 특정 쿠폰 코드로 쿠폰 발급 요청
-2. Kafka로 발급 요청 전송 (Request-Reply Pattern)
-3. Consumer가 Redis Lua Script로 잔여 수량 원자 감소
-4. 성공 시 DB에 `user_coupons` INSERT
-5. 주문 시 쿠폰코드를 함께 제출하면 할인 적용
-6. 사용된 쿠폰은 상태 `USED`로 변경
-
-**예외**:
-
-- [C-01] 쿠폰 수량 소진 → 발급 실패 (410 GONE)
-- [C-02] 이미 발급받은 사용자 → 중복 발급 방지 (409 CONFLICT)
-- [C-03] Kafka 응답 타임아웃 → 3초 초과 시 504 반환
-
----
-
-### 인기 상품 조회
-
-**Actor**: 사용자 / 관리자  
-**Flow**:
-
-1. Redis ZSET에서 Top 5 조회 (O(log N))
-2. DB에서 상품 상세 정보 조회 (IN 쿼리)
-3. Redis 순서대로 정렬하여 반환
-
----
-
-## 시스템 동작 시나리오 요약
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant API
-    participant Redis
-    participant DB
-    participant Kafka
-    participant DataPlatform
-
-    User->>API: 주문 요청 (상품 목록, 수량)
-    API->>Redis: 분산락 획득 (User + Products)
-    Redis-->>API: Lock Tokens
-    
-    API->>DB: 트랜잭션 시작 (wallet, products 행 잠금)
-    DB-->>API: 재고/잔액 확인 OK
-    
-    API->>DB: 재고 감소, 잔액 차감, 주문 저장
-    API->>DB: Outbox 이벤트 기록
-    DB-->>API: Commit
-    
-    API->>Redis: 분산락 해제
-    API-->>User: 주문 완료 응답
-    
-    Note over API,Kafka: 비동기 처리
-    API->>Kafka: OutboxWorker가 이벤트 발행
-    Kafka->>DataPlatform: 주문 이벤트 전송
-    
-    alt 전송 실패
-        DataPlatform-->>Kafka: Fail
-        Kafka->>Kafka: DLQ Stream 적재
-    end
-```
+| 항목 | 목표 | 검증 상태 |
+|---|---|---|
+| 데이터 일관성 | 주문/결제/재고/포인트를 트랜잭션 단위로 원자 처리 | ✅ 동시성 테스트로 검증 |
+| 확장성 | 다중 인스턴스에서도 쿠폰/재고 정합성 유지 | ✅ 분산락 기반 Stateless 설계 |
+| 테스트 | 기능별 단위·통합 테스트 (Testcontainers) | ✅ 77개 |
+| 가용성 | Docker Compose로 로컬 통합 실행 | ✅ |
+| 성능 | 1초 내 응답, 동시 주문 100건 이상 처리 | ⚠️ **80 iter/s까지 충족** (p95 519ms) · 그 이상은 쿠폰 경로 포화 |
 
 ---
 
 ## ERD 설계
 
-## 개요
-
-본 프로젝트는 e-커머스 주문 서비스의 **정합성, 동시성, 멱등성**을 모두 고려한 데이터베이스 설계를 기반으로 합니다.  
-다중 인스턴스 환경에서도 재고/포인트/쿠폰의 무결성을 유지하며, Outbox 패턴을 통해 외부 데이터 플랫폼과의 **데이터 일관성**을 보장합니다.
-
-> 🔗 ERD Cloud Diagram: [ERD Cloud 바로가기](https://www.erdcloud.com/p/BNbziboLiCBswccSH)
+> 🔗 [ERD Cloud 다이어그램](https://www.erdcloud.com/p/BNbziboLiCBswccSH)
 
 ![ERD Diagram](docs/assets/erd_diagram.png)
 
----
+### 테이블 구조
 
-### 테이블 구조 요약
-
-| 테이블명             | 주요 컬럼 요약                                                                                                                             | 핵심 제약 / 인덱스                                                                                                                        | 설명                             |
-|------------------|--------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------|--------------------------------|
-| **users**        | `user_id`, `name`, `created_at`                                                                                                      | PK(`user_id`)                                                                                                                      | 사용자 기본 정보                      |
-| **wallets**      | `user_id`, `balance`                                                                                                                 | PK(`user_id`), FK→`users`, `CHECK(balance ≥ 0)`                                                                                    | 사용자 포인트 잔액 관리                  |
-| **orders**       | `order_id`, `user_id`, `status`, `total_amount`, `discount_amount`, `paid_amount`, `idempotency_key`, `user_coupon_id`, `created_at` | `UNIQUE(idempotency_key)`<br>`FK(user_coupon_id → user_coupons.id)`<br>`INDEX(status, created_at)`<br>`INDEX(user_id, created_at)` | 주문 / 결제 단위 데이터. 멱등키로 중복 요청 방지  |
-| **order_items**  | `order_item_id`, `order_id`, `product_id`, `unit_price`, `quantity`, `subtotal`                                                      | `UNIQUE(order_id, product_id)`<br>`CHECK(quantity > 0)`<br>`CHECK(unit_price ≥ 0)`<br>`CHECK(subtotal ≥ 0)`                        | 주문 상세 품목. 같은 상품 중복 삽입 방지       |
-| **payments**     | `payment_id`, `order_id`, `amount`, `status`, `paid_at`                                                                              | `UNIQUE(order_id)`<br>`ENUM('SUCCESS','FAILED')`                                                                                   | 주문 1건당 결제 1회 보장                |
-| **products**     | `id`, `name`, `price`, `stock`, `created_at`                                                                                         | PK(`id`), `UNIQUE(name)`, `CHECK(stock ≥ 0)`                                                                                       | 상품 기본 정보 / 재고 관리               |
-| **coupons**      | `coupon_id`, `code`, `type`, `value`, `starts_at`, `ends_at`, `created_at`                                                           | `UNIQUE(code)`<br>`ENUM('PERCENT','FIXED')`                                                                                        | 쿠폰 정의 테이블 (선착순 발급 기준)          |
-| **user_coupons** | `id`, `user_id`, `coupon_id`, `request_id`, `status`, `claimed_at`, `used_at`                                                        | `UNIQUE(user_id, coupon_id)`<br>`UNIQUE(request_id)`<br>`INDEX(user_id, status)`                                                   | 사용자별 쿠폰 보유/사용 내역 (멱등키 포함)     |
-| **point_ledger** | `id`, `user_id`, `order_id`, `delta`, `reason`, `created_at`                                                                         | PK(`id`), `ENUM('CHARGE','ORDER')`                                                                                                 | 포인트 증감 로그. 결제 시 차감, 충전 시 증가 기록 |
-| **outbox**       | `id`, `aggregate_type`, `aggregate_id`, `payload`, `status`, `processed`, `created_at`                                               | `INDEX(status, id)`<br>`INDEX(aggregate_type, status, processed)`<br>`ENUM('PENDING','SENT','FAILED')`                             | 외부 데이터 플랫폼 전송 보장용 이벤트 로그       |
-| **popular_products** | `id`, `product_id`, `sales_quantity`, `recorded_at`                                                                              | `INDEX(sales_quantity DESC)`                                                                                                        | 인기 상품 집계 (DB 기반 백업)           |
-
----
+| 테이블 | 핵심 제약 / 인덱스 | 설명 |
+|---|---|---|
+| **users** | PK(`user_id`) | 사용자 기본 정보 |
+| **wallets** | PK(`user_id`), FK→`users`, `CHECK(balance ≥ 0)` | 포인트 잔액 |
+| **products** | PK(`id`), `UNIQUE(name)`, `CHECK(stock ≥ 0)` | 상품 / 재고 |
+| **orders** | **`UNIQUE(idempotency_key)`**, `INDEX(user_id, created_at)`, `INDEX(status, created_at)` | 주문·결제 단위. 멱등키로 중복 요청 방지 |
+| **order_item** | `UNIQUE(order_id, product_id)`, `CHECK(quantity > 0)`, `CHECK(subtotal ≥ 0)` | 주문 상세. 동일 상품 중복 삽입 방지 |
+| **payments** | `UNIQUE(order_id)`, `ENUM('SUCCESS','FAILED')` | 주문 1건당 결제 1회 보장 |
+| **coupons** | `UNIQUE(code)`, `ENUM('PERCENT','FIXED')` | 쿠폰 정의 (선착순 수량 포함) |
+| **user_coupons** | **`UNIQUE(user_id, coupon_id)`**, **`UNIQUE(request_id)`**, `INDEX(user_id, status)` | 사용자별 발급/사용 내역. 2중 멱등 제약 |
+| **point_ledger** | PK(`id`), `ENUM('CHARGE','ORDER')` | 포인트 증감 로그 |
+| **outbox** | `INDEX(status, id)`, `INDEX(aggregate_type, status, processed)`, `ENUM('PENDING','SENT','FAILED')` | 외부 전송 보장용 이벤트 로그 |
+| **popular_products** | `INDEX(sales_quantity DESC)` | 인기 상품 집계 (Redis ZSET의 DB 백업) |
 
 ### 설계 포인트
 
-| 구분                    | 설명                                                     |
-|-----------------------|--------------------------------------------------------|
-| **정합성 보장**            | `FOR UPDATE` 트랜잭션으로 Wallet / Product 재고를 안전하게 잠금       |
-| **멱등성 (Idempotency)** | `orders.idempotency_key UNIQUE`, `user_coupons.request_id UNIQUE` |
-| **데이터 추적성**           | Coupon → UserCoupon → Order 흐름으로 쿠폰 사용 내역 추적 가능        |
-| **무결성 제약**            | CHECK, UNIQUE, FK로 음수/중복/고아 데이터 방지                     |
-| **Outbox 패턴**         | 주문 커밋과 외부 전송(데이터 플랫폼 연동)을 원자적으로 분리                     |
-| **조회 성능**             | `status`, `user_id`, `created_at` 기반 인덱스로 통계/이력 조회 최적화 |
+| 구분 | 설명 |
+|---|---|
+| 정합성 보장 | `SELECT FOR UPDATE`로 Wallet / Product 행 잠금 |
+| 멱등성 | `orders.idempotency_key UNIQUE`, `user_coupons.request_id UNIQUE` |
+| 데이터 추적성 | Coupon → UserCoupon → Order 흐름으로 쿠폰 사용 내역 추적 |
+| 무결성 제약 | CHECK · UNIQUE · FK로 음수/중복/고아 데이터 방지 |
+| Outbox 패턴 | 주문 커밋과 외부 전송을 원자적으로 분리 |
 
 ---
 
-## API 명세서 (v1) — E-commerce 주문 서비스
+## API 명세
 
-- Base URL: `/api/v1`
+- Base URL: `/api/v1` (**쿠폰만 `/api/coupons`**)
 - Content-Type: `application/json; charset=utf-8`
-- 시간 형식: ISO-8601 UTC (`yyyy-MM-dd'T'HH:mm:ss'Z'`)
-- 멱등성: 쓰기 API는 `idempotencyKey` 필드 지원(중복 요청 방지)
+- 시간 형식: ISO-8601 UTC
+- 전체 명세: Swagger UI `http://localhost:7777/swagger-ui.html`
 
----
+![Swagger UI](docs/assets/swagger-ui.png)
 
-## 에러 응답 규격
+> 로컬 실행 화면 (springdoc-openapi, OAS 3.0) — 5개 컨트롤러 / 10개 엔드포인트
 
-### 공통 에러 포맷
+### 에러 응답 규격
 
 ```json
 {
-  "timestamp": "2025-01-02T12:34:56Z",
+  "timestamp": "2026-01-02T12:34:56Z",
   "path": "/api/v1/orders",
   "error": "OUT_OF_STOCK",
   "message": "재고가 부족합니다.",
@@ -562,77 +776,41 @@ sequenceDiagram
 }
 ```
 
-### 공통 에러 코드
+| code | 설명 | HTTP |
+|---|---|---|
+| `VALIDATION_ERROR` | 파라미터/바디 검증 실패 | 400 |
+| `NOT_FOUND` | 리소스 없음 | 404 |
+| `CONFLICT` | 멱등 충돌 / 중복 요청 | 409 |
+| `OUT_OF_STOCK` | 재고 부족 | 409 |
+| `INSUFFICIENT_BALANCE` | 잔액 부족 | 409 |
+| `COUPON_ALREADY_CLAIMED` | 이미 발급받음 | 409 |
+| `ALREADY_USED` | 이미 사용된 쿠폰 | 409 |
+| `COUPON_SOLD_OUT` | 선착순 소진 | 410 |
+| `COUPON_INVALID` | 쿠폰 코드/기간/소유 불일치 | 400 |
+| `GATEWAY_TIMEOUT` | Kafka reply 타임아웃 (3초 초과) | 504 |
+| `INTERNAL_ERROR` | 서버 오류 | 500 |
 
-| code                   | 설명                     | HTTP |
-| ---------------------- | ---------------------- | ---- |
-| VALIDATION_ERROR       | 파라미터/바디 검증 실패          | 400  |
-| NOT_FOUND              | 리소스 없음                 | 404  |
-| CONFLICT               | 멱등 충돌/중복 요청 등          | 409  |
-| OUT_OF_STOCK           | 재고 부족                  | 409  |
-| INSUFFICIENT_BALANCE   | 잔액 부족                  | 409  |
-| COUPON_INVALID         | 쿠폰 코드/기간/소유 불일치        | 400  |
-| COUPON_SOLD_OUT        | 선착순 소진                 | 410  |
-| COUPON_ALREADY_CLAIMED | 이미 발급받음                | 409  |
-| LOCK_ACQUIRE_FAILED    | 분산락 획득 실패              | 500  |
-| GATEWAY_TIMEOUT        | Kafka 응답 타임아웃 (3초 초과) | 504  |
-| INTERNAL_ERROR         | 서버 오류                  | 500  |
+> **409·410은 정상적인 비즈니스 결과입니다.** 부하 테스트에서 이를 실패로 집계하지 않도록
+> k6 `expectedStatuses`에 명시해 두었습니다. ([기술 사례 3](#기술-사례-3--e2e-부하-테스트-장애-회고-rate-50--300))
 
----
+### 주요 엔드포인트
 
-## 1) 상품 조회
+| Method | Path | 설명 | 정상 응답 |
+|---|---|---|---|
+| `GET` | `/api/v1/products` | 상품 목록 | 200 |
+| `GET` | `/api/v1/products/{productId}` | 상품 단건 | 200 |
+| `GET` | `/api/v1/products/top-selling` | 인기 상품 Top 5 (Redis ZSET) | 200 |
+| `POST` | `/api/v1/orders` | 주문 생성·결제 | 201 / 409 |
+| `POST` | `/api/v1/wallets/{userId}/charge` | 포인트 충전 | 200 |
+| `POST` | `/api/v1/wallets/{userId}/debit` | 포인트 차감 | 200 / 409 |
+| `GET` | `/api/v1/wallets/{userId}/balance` | 잔액 조회 | 200 |
+| `POST` | `/api/coupons/claim/{couponId}` | 선착순 쿠폰 발급 | 200 / 409 / 410 / 403 / 504 |
+| `GET` | `/api/coupons/users/{userId}/coupons` | 보유 쿠폰 목록 | 200 |
 
-### GET `/products`
-
-전체 상품 목록 조회.
-
-**Response 200**
-
-```json
-{
-  "products": [
-    {
-      "productId": 1,
-      "name": "PERF_PRODUCT_1",
-      "price": 1000.00,
-      "stock": 200
-    }
-  ]
-}
-```
-
----
-
-### GET `/products/top-selling`
-
-인기 상품 Top 5 조회 (Redis ZSET 기반).
-
-**Response 200**
+**주문 생성 예시**
 
 ```json
-{
-  "products": [
-    {
-      "productId": 1,
-      "name": "PERF_PRODUCT_1",
-      "price": 1000.00,
-      "stock": 180
-    }
-  ]
-}
-```
-
----
-
-## 2) 주문 및 결제
-
-### POST `/orders`
-
-주문 생성 및 결제 처리. 멱등키로 중복 방지.
-
-**Request**
-
-```json
+POST /api/v1/orders
 {
   "userId": 1,
   "items": [
@@ -644,438 +822,122 @@ sequenceDiagram
 }
 ```
 
-**Response 201**
-
 ```json
-{
-  "orderId": 100,
-  "userId": 1,
-  "totalAmount": 15000.00
-}
+201 Created
+{ "orderId": 100, "userId": 1, "totalAmount": 15000.00 }
 ```
 
-**주요 에러**
+**쿠폰 발급 예시**
 
-* `409 OUT_OF_STOCK` - 재고 부족
-* `409 INSUFFICIENT_BALANCE` - 잔액 부족
-* `400 COUPON_INVALID` - 쿠폰 유효하지 않음
-* `409 CONFLICT` - 동일 idempotencyKey로 다른 요청
+```json
+POST /api/coupons/claim/5
+{ "userId": 1, "couponId": 5, "requestId": "uuid-67890" }
+```
+
+```json
+200 OK
+{ "userCouponId": 123, "userId": 1, "couponId": 5, "couponStatus": "CLAIMED" }
+```
+
+### 멱등성 규칙
+
+- `idempotencyKey`가 같은 **동일 요청**은 항상 **같은 결과**를 반환합니다.
+- 같은 키로 **바디가 다른** 요청이 오면 `409 CONFLICT`.
+- Kafka `requestId`에도 동일 원칙이 적용됩니다 (`user_coupons.request_id UNIQUE`).
 
 ---
 
-## 3) 포인트 충전 / 조회
+## 인프라 구성
 
-### POST `/wallets/{userId}/charge`
+### 현재 검증된 구성 (로컬)
 
-지갑 포인트 충전.
-
-**Request**
-
-```json
-{
-  "amount": 50000.00
-}
+```mermaid
+graph LR
+    K[k6] --> APP[Spring Boot :7777<br/>단일 인스턴스]
+    APP --> MY[(MySQL :3307)]
+    APP --> RD[(Redis :6379)]
+    APP --> KF[Kafka :9092]
+    KF --> ZK[Zookeeper :2181]
 ```
 
-**Response 200**
+전부 `docker-compose.yml` 한 파일로 기동됩니다.
 
-```json
-{
-  "userId": 1,
-  "balance": 153000.00
-}
-```
+### AWS 구성
 
----
-
-### GET `/wallets/{userId}/balance`
-
-사용자 지갑 잔액 조회.
-
-**Response 200**
-
-```json
-{
-  "balance": 153000.00
-}
-```
-
----
-
-## 4) 선착순 쿠폰
-
-### POST `/coupons/claim/{couponId}`
-
-쿠폰 선착순 발급 (Kafka 동기 응답, 3초 timeout).
-
-**Request**
-
-```json
-{
-  "userId": 1,
-  "couponId": 5,
-  "requestId": "uuid-67890"
-}
-```
-
-**Response 200**
-
-```json
-{
-  "userCouponId": 123,
-  "userId": 1,
-  "couponId": 5,
-  "couponStatus": "CLAIMED",
-  "claimedAt": "2025-01-02T12:00:00Z"
-}
-```
-
-**에러**
-
-* `409 COUPON_ALREADY_CLAIMED` - 이미 발급
-* `410 COUPON_SOLD_OUT` - 쿠폰 소진
-* `403 FORBIDDEN` - 발급 기간 아님
-* `504 GATEWAY_TIMEOUT` - Kafka 응답 지연
-
----
-
-### GET `/coupons/users/{userId}/coupons`
-
-사용자의 보유 쿠폰 목록 조회.
-
-**Response 200**
-
-```json
-{
-  "userId": 1,
-  "coupons": [
-    {
-      "couponId": 10,
-      "code": "PERF_COUPON",
-      "status": "CLAIMED",
-      "claimedAt": "2025-01-02T12:00:00Z"
-    }
-  ]
-}
-```
-
----
-
-## 멱등성 규칙
-
-* `idempotencyKey`가 같은 **동일 요청**은 항상 **같은 결과**를 반환.
-* 같은 키로 **바디가 다른** 요청이 오면 `409 CONFLICT`.
-* Kafka `requestId`도 동일 원칙 적용 (중복 발급 방지).
-
----
-
-## 인프라 구성도
-
-본 서비스는 **모놀리식 Spring Boot 기반**으로 구현되며,  
-**AWS 인프라 상에서 API Gateway → Elastic Load Balancer(ALB) → EC2 인스턴스 → RDB/Redis**  
-흐름으로 구성되어 있습니다.
+**모놀리식 Spring Boot 기반**으로, `API Gateway → ALB → EC2 → RDS/Redis` 흐름으로 구성됩니다.
 
 ![infrastructure](docs/assets/infrastructure.png)
 
----
-
-## 구성 요소별 설명
-
 | 구성 요소 | 역할 | 설명 |
-|------------|------|------|
-| **Client (Web/Mobile)** | 서비스 이용자 | HTTPS 프로토콜로 API Gateway에 요청 |
-| **Amazon API Gateway** | 엔트리 포인트 | - 인증/인가, 라우팅, CORS, RateLimit, TLS 종료 수행<br>- 내부 요청을 ALB로 전달 |
-| **Elastic Load Balancer (ALB)** | 애플리케이션 로드밸런서 | - L7 HTTP 기반 트래픽 분산<br>- `/api/v1/*` 요청을 Spring Boot App으로 라우팅<br>- 헬스체크(`/actuator/health`) 수행 |
-| **EC2 Instances (App Tier)** | 애플리케이션 서버 | - Spring Boot App 다중 인스턴스 실행<br>- Stateless 구조로 세션 공유 필요 없음<br>- Outbox Worker는 별도 프로필로 실행 |
-| **Redis** | 캐시/분산락/랭킹 | - 분산락: `SETNX` + `Lua Script`<br>- 쿠폰: `DECR` + `SET`<br>- 랭킹: `ZSET` (O(log N)) |
-| **MySQL (RDS)** | 메인 데이터베이스 | - InnoDB 기반 트랜잭션 관리<br>- `FOR UPDATE`로 재고/포인트 정합성 보장 |
-| **Kafka + Zookeeper** | 메시지 큐 | - 쿠폰 발급 Request-Reply<br>- Outbox 이벤트 발행 |
-| **Outbox Worker** | 외부 데이터 연동 | - 주문 이벤트를 Outbox 테이블에서 읽어 외부 전송<br>- 실패 시 DLQ로 재시도 |
+|---|---|---|
+| **Client (Web/Mobile)** | 서비스 이용자 | HTTPS로 API Gateway에 요청 |
+| **Amazon API Gateway** | 엔트리 포인트 | 인증/인가, 라우팅, CORS, RateLimit, TLS 종료 후 ALB로 전달 |
+| **ALB** | 애플리케이션 로드밸런서 | L7 트래픽 분산, `/api/v1/*` 라우팅, `/actuator/health` 헬스체크 |
+| **EC2 (App Tier)** | 애플리케이션 서버 | Spring Boot 다중 인스턴스, Stateless 구조로 세션 공유 불필요 |
+| **Redis** | 캐시 / 분산락 / 랭킹 | 분산락 `SET NX` + Lua, 쿠폰 `DECR`, 랭킹 `ZSET` |
+| **MySQL (RDS)** | 메인 데이터베이스 | InnoDB 트랜잭션, `FOR UPDATE`로 재고/포인트 정합성 보장 |
+| **Kafka + Zookeeper** | 메시지 큐 | 쿠폰 발급 Request-Reply |
+| **Outbox Worker** | 외부 데이터 연동 | Outbox 테이블을 읽어 전송, 실패 시 DLQ 재시도 |
+
+> 부하 테스트 수치는 **로컬 Docker Compose 단일 인스턴스** 기준입니다.
+> 다중 인스턴스 환경의 측정치는 별도로 확보하지 않았습니다.
+
+### 주요 설정값
+
+| 항목 | 값 | 출처 |
+|---|---|---|
+| HikariCP 최대 커넥션 | 20 (connection-timeout 10s, max-lifetime 60s) | `application.yml` |
+| Kafka 토픽 파티션 | 6 (`replication-factor=1`) — 부하 테스트 중 3에서 상향 | `CouponKafkaTopicsConfig.java` |
+| Kafka Consumer 동시성 | **1 (기본값)** — 파티션 6을 단일 스레드가 소비 | `CouponClaimRequestConsumer.java` |
+| 쿠폰 reply 타임아웃 | 3초 | `CouponClaimReplyAwaiter.java` |
+| springdoc-openapi | **2.7.0** (Boot 3.4 = Spring 6.2 호환 버전) | `build.gradle.kts` |
+| 분산락 wait / lease | 3초 / 5~10초 | `OrderFacade.java` |
+| Outbox 폴링 주기 | 10초 (배치 100건) | `OutboxWorker.java` |
+| DLQ 최대 재시도 | 10회 | `application.yml` |
 
 ---
 
-## 테스트 전략
+## 프로젝트 구조
 
-### **테스트 피라미드**
+### 저장소 레이아웃
 
-```mermaid
-graph TB
-    A[E2E Tests - 5%<br/>k6 부하 테스트] --> B[Integration Tests - 25%<br/>Testcontainers]
-    B --> C[Unit Tests - 70%<br/>Domain Logic]
-    
-    style A fill:#f44336
-    style B fill:#ff9800
-    style C fill:#4caf50
+```
+.
+├── src/main/java/       애플리케이션 코드
+├── src/test/java/       단위 · 동시성 · 통합 테스트 (77개)
+├── docs/                기술 문서 · 장애 회고
+│   └── assets/          ERD · 인프라 구성도 · Swagger 화면
+├── k6/                  부하 테스트 스크립트 + 측정 원본(result-*.json)
+├── docker-compose.yml   MySQL · Redis · Kafka · Zookeeper
+├── build.gradle.kts
+└── .gitignore           build/ · data/ · .gradle/ · .idea/ 제외
 ```
 
-### **테스트 커버리지 매트릭스**
+> `data/`(MySQL 컨테이너 볼륨)와 `build/`는 **추적하지 않습니다.**
+> 클론 직후 `docker-compose up -d` 를 실행하면 `data/` 가 새로 생성됩니다.
 
-| 도메인 | Unit | Concurrency | Integration | E2E |
-|--------|------|-------------|-------------|-----|
-| **Order** | ✅ (15개) | ✅ (3개) | ✅ (2개) | ✅ (k6) |
-| **Wallet** | ✅ (10개) | ✅ (3개) | - | - |
-| **Product** | ✅ (15개) | ✅ (2개) | - | - |
-| **Coupon** | ✅ (8개) | - | ✅ (Kafka) | ✅ (k6) |
-| **Outbox** | - | - | ✅ (2개) | - |
-| **DLQ** | - | - | ✅ (1개) | - |
+### 애플리케이션 패키지
 
-### **동시성 테스트 패턴**
-
-```java
-@Test
-void 동시_주문_요청_시_재고_정합성_보장() {
-    // Given
-    int threadCount = 100;
-    ExecutorService executorService = Executors.newFixedThreadPool(threadCount);
-    CountDownLatch startLatch = new CountDownLatch(1);  // 동시 시작
-    CountDownLatch doneLatch = new CountDownLatch(threadCount);
-
-    AtomicInteger successCount = new AtomicInteger(0);
-    AtomicInteger failCount = new AtomicInteger(0);
-
-    // When
-    for (int i = 0; i < threadCount; i++) {
-        executorService.submit(() -> {
-            try {
-                startLatch.await();
-                orderFacade.createOrder(...);
-                successCount.incrementAndGet();
-            } catch (Exception e) {
-                failCount.incrementAndGet();
-            } finally {
-                doneLatch.countDown();
-            }
-        });
-    }
-
-    startLatch.countDown();
-    doneLatch.await(10, TimeUnit.SECONDS);
-
-    // Then
-    assertThat(successCount.get() + failCount.get()).isEqualTo(threadCount);
-    assertThat(product.getStock()).isEqualTo(initialStock - successCount.get());
-}
 ```
-
----
-
-## 실행 방법
-
-### **1. 환경 구성**
-
-#### Prerequisites
-
-- Java 17+
-- Docker & Docker Compose
-- Gradle 8.x
-
-#### Docker Compose 실행
-
-```bash
-# 인프라 실행 (MySQL, Redis, Kafka, Zookeeper)
-docker-compose up -d
-
-# 실행 확인
-docker-compose ps
+src/main/java/kr/hhplus/be/server/
+├── coupon/          선착순 쿠폰 — Kafka Request-Reply, Redis Lua
+│   ├── consumer/    ClaimRequestConsumer, ClaimReplyConsumer
+│   ├── producer/    ClaimProducer
+│   └── messages/    Kafka 메시지 DTO
+├── order/           주문·결제 — 멀티락, 멱등성
+├── product/         상품·재고
+│   └── popularProduct/  Redis ZSET 랭킹
+├── wallet/          포인트 지갑
+├── outbox/          Outbox 패턴 — Worker, DataPlatform 전송
+├── events/          Redis Pub/Sub, DLQ Stream 재시도 워커
+├── redis/           RedisLockService (분산락)
+└── perf/            부하 테스트용 시드 컨트롤러
 ```
-
----
-
-### **2. 애플리케이션 실행**
-
-```bash
-# 메인 애플리케이션
-./gradlew bootRun --args='--spring.profiles.active=local'
-
-# Outbox Worker (별도 프로필)
-./gradlew bootRun --args='--spring.profiles.active=local,worker'
-```
-
----
-
-### **3. 부하 테스트 실행**
-
-```bash
-# 초기 데이터 생성 (20,000명 유저, 1,000개 상품)
-curl -X POST "http://localhost:7777/internal/perf/reset-seed?productCount=1000&walletUserCount=20000&hotCouponQuantity=20000&walletInitialBalance=1000000"
-
-# k6 부하 테스트 (RATE=300 req/s, 60초)
-k6 run -e BASE_URL=http://localhost:7777 \
-       -e RATE=300 \
-       -e DURATION=60s \
-       -e MAX_VUS=500 \
-       k6-e2e-coupon-order.js
-```
-
----
-
-### **4. 테스트 검증**
-
-```bash
-# 단위 테스트
-./gradlew test
-
-# 통합 테스트 (Testcontainers)
-./gradlew integrationTest
-
-# 동시성 테스트
-./gradlew test --tests '*ConcurrencyTest'
-```
-
----
-
-## 트러블슈팅 & 학습 포인트
-
-### **1. RATE=50에서 Timeout/5xx 급증 → RATE=300 안정화**
-
-#### **사건 타임라인**
-
-```mermaid
-gantt
-    title 부하 테스트 장애 복구 타임라인
-    dateFormat HH:mm
-    section 장애
-    RATE=50 timeout 급증     :12:00, 15m
-    section 원인 분석
-    Kafka 미기동 발견         :12:15, 10m
-    UNIQUE 위반 세션 오염     :12:25, 15m
-    Redis 재고 초기화 오류    :12:40, 20m
-    section 해결
-    Consumer 재시도 로직     :13:00, 30m
-    Redis/DB 의미 일치       :13:30, 30m
-    Expected Status 적용     :14:00, 20m
-    section 검증
-    RATE=300 안정화 확인     :14:20, 40m
-```
-
-#### **근본 원인 분석**
-
-1. **Kafka Consumer 미기동**: 설정 오류로 Consumer가 실행되지 않음
-2. **UNIQUE 위반 세션 오염**: 트랜잭션 롤백 후 세션에 엔티티 남음
-3. **Redis 재고 초기화 오류**: `setIfAbsent`로 1로 고정 → DB 수량과 불일치
-4. **k6 지표 오해**: 409/410을 "실패"로 판단 → 실제는 비즈니스 결과
-
-#### **해결 방법**
-
-```java
-// 1️⃣ UNIQUE 위반 시 세션 클리어
-try {
-        return userCouponRepository.save(newUserCoupon);
-} catch (DataIntegrityViolationException e) {
-        entityManager.clear();  // ✅ 세션 정리
-compensateIncrementRemaining(couponId);  // ✅ 보상 트랜잭션
-    throw new CouponAlreadyClaimedException();
-}
-
-// 2️⃣ Redis 초기값을 DB와 동기화
-private void initRemainIfAbsent(Long couponId, long totalQuantity) {
-    String remainKey = "coupon:" + couponId + ":remain";
-    redisTemplate.opsForValue()
-            .setIfAbsent(remainKey, String.valueOf(totalQuantity));  // ✅ DB 값 사용
-}
-
-// 3️⃣ k6에서 Expected Status 처리
-responseCallback: http.expectedStatuses(200, 409, 410, 403, 504)
-```
-
----
-
-### **2. Redis는 캐시가 아닌 도메인 도구**
-
-#### **잘못된 인식**
-- Redis = 단순 캐시 (데이터베이스 앞단의 읽기 성능 최적화)
-
-#### **올바른 활용**
-- **ZSET**: 정렬이 필요한 랭킹 (O(log N))
-- **SET**: 중복 방지 (쿠폰 발급 내역)
-- **Lua Script**: 복잡한 원자 연산 (선착순 로직)
-
-```lua
--- 단순 조회가 아닌 "도메인 규칙 실행"
-if redis.call('SISMEMBER', issuedKey, userId) == 1 then
-  return -1  -- ALREADY_CLAIMED
-end
-
-local remain = tonumber(redis.call('GET', remainKey))
-if remain <= 0 then return 0 end
-
-redis.call('DECR', remainKey)
-redis.call('SADD', issuedKey, userId)
-return 1
-```
-
----
-
-### **3. Outbox + Redis 조합의 중요성**
-
-#### **잘못된 설계: Redis를 트랜잭션 내부에서 직접 호출**
-
-```java
-@Transactional
-public Order createOrder(...) {
-    orderRepository.save(order);
-
-    // ❌ Redis 직접 호출
-    rankingRedis.increaseSales(productId, quantity);  // 트랜잭션 롤백 시 정합성 깨짐
-}
-```
-
-#### **올바른 설계: Outbox 패턴으로 경계 분리**
-
-```java
-@Transactional
-public Order createOrder(...) {
-    orderRepository.save(order);
-
-    // ✅ Outbox 저장 (트랜잭션 범위)
-    outboxRepository.save(new Outbox("ORDER", orderId, "ORDER_CREATED", payload));
-}
-
-// ✅ 별도 Worker가 Outbox → Redis 전송
-@Scheduled(fixedDelay = 1000)
-public void processOrderEvents() {
-    List<Outbox> events = outboxRepository.findPendingOrderEvents();
-    for (Outbox event : events) {
-        rankingRedis.increaseSales(...);  // 재시도 가능
-        event.markProcessed();
-    }
-}
-```
-
----
-
-### **4. 분산락과 DB 트랜잭션 혼용 주의점**
-
-#### **문제 시나리오**
-
-```java
-String token = redisLockService.tryLock(key, 3000, 5000);  // TTL 5초
-
-try {
-// ❌ 트랜잭션이 10초 걸림 → 락 만료 → 다른 쓰레드 진입
-@Transactional
-public void longTransaction() {
-    Thread.sleep(10000);
-    orderRepository.save(order);
-}
-} finally {
-        redisLockService.unlock(key, token);
-}
-```
-
-#### **설계 원칙**
-
-1. **분산락 TTL > 트랜잭션 실행 시간**: 최소 2배 이상 여유
-2. **Token 기반 Unlock**: 소유자만 해제 가능 (Lua Script)
-3. **최종 정합성은 DB가 보장**: 분산락은 "진입 제어"일 뿐
 
 ---
 
 ## Acknowledgments
 
-- **항해플러스 백엔드 6기**: 동시성 제어, 대규모 트래픽 대응 실습
-- **Spring Boot Community**: 풍부한 레퍼런스와 베스트 프랙티스
-- **Redis Labs**: 분산 시스템 패턴 가이드
-- **Apache Kafka**: 이벤트 기반 아키텍처 영감
-
----
+- **항해99 Lite 백엔드 과정** — 동시성 제어, 대규모 트래픽 대응 실습
+- 이 README는 다음 작성 공식을 따릅니다:
+  **문제와 부하 모델 → 요구사항과 실패 조건 → 대안 비교 → 설계/구현 → 검증 결과 → 한계와 다음 개선**
