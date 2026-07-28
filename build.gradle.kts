@@ -50,7 +50,10 @@ dependencies {
 	runtimeOnly("com.mysql:mysql-connector-j")
 
 	// swagger
-	implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.6.0")
+	// Boot 3.4(Spring Framework 6.2)와 호환되는 버전.
+	// 2.6.0은 Spring 6.1 기준이라 /v3/api-docs 요청 시
+	// NoSuchMethodError: ControllerAdviceBean.<init>(Object) 로 500이 발생한다.
+	implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.7.0")
 
 	// Test
 	testImplementation("org.springframework.boot:spring-boot-starter-test")
