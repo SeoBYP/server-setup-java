@@ -1,0 +1,162 @@
+{
+    "root_group": {
+        "name": "",
+        "path": "",
+        "id": "d41d8cd98f00b204e9800998ecf8427e",
+        "groups": {},
+        "checks": {
+                "claim is 200/409/410/403/504": {
+                    "name": "claim is 200/409/410/403/504",
+                    "path": "::claim is 200/409/410/403/504",
+                    "id": "f822021f4b5fbd331fbc95784f7f339e",
+                    "passes": 76194,
+                    "fails": 0
+                },
+                "claim has userCouponId": {
+                    "fails": 0,
+                    "name": "claim has userCouponId",
+                    "path": "::claim has userCouponId",
+                    "id": "417267917c37799ea6f2c36df055277e",
+                    "passes": 19580
+                },
+                "order is 201 or 409(insufficient balance)": {
+                    "name": "order is 201 or 409(insufficient balance)",
+                    "path": "::order is 201 or 409(insufficient balance)",
+                    "id": "0bb4ba9dd2d94513e86f71224fc1d0e4",
+                    "passes": 19401,
+                    "fails": 179
+                }
+            }
+    },
+    "metrics": {
+        "claim_status": {
+            "count": 76194,
+            "rate": 878.5152678278041
+        },
+        "http_req_failed": {
+            "passes": 179,
+            "fails": 95596,
+            "thresholds": {
+                "rate<0.05": false
+            },
+            "value": 0.001868963717045158
+        },
+        "dropped_iterations": {
+            "count": 13806,
+            "rate": 159.1828987535851
+        },
+        "http_req_duration{expected_response:true}": {
+            "max": 26719.0409,
+            "p(90)": 1792.9243000000001,
+            "p(95)": 2047.5175,
+            "avg": 575.2986197665239,
+            "min": 5.1754,
+            "med": 53.14365
+        },
+        "iteration_duration": {
+            "med": 43.2874,
+            "max": 6923.1927,
+            "p(90)": 2128.1091499999998,
+            "p(95)": 2837.4007599999995,
+            "avg": 729.8614703126285,
+            "min": 5.1754
+        },
+        "http_req_connecting": {
+            "med": 0,
+            "max": 18.4175,
+            "p(90)": 0,
+            "p(95)": 0,
+            "avg": 0.011271871574001568,
+            "min": 0
+        },
+        "http_req_tls_handshaking": {
+            "max": 0,
+            "p(90)": 0,
+            "p(95)": 0,
+            "avg": 0,
+            "min": 0,
+            "med": 0
+        },
+        "data_received": {
+            "count": 13337313,
+            "rate": 153778.94719135697
+        },
+        "iterations": {
+            "count": 76194,
+            "rate": 878.5152678278041
+        },
+        "http_reqs": {
+            "count": 95775,
+            "rate": 1104.2837989370285
+        },
+        "http_req_blocked": {
+            "avg": 0.01344965700861394,
+            "min": 0,
+            "med": 0,
+            "max": 22.7828,
+            "p(90)": 0,
+            "p(95)": 0
+        },
+        "data_sent": {
+            "count": 22142092,
+            "rate": 255297.86969640496
+        },
+        "http_req_sending": {
+            "p(95)": 0,
+            "avg": 0.02052929887757763,
+            "min": 0,
+            "med": 0,
+            "max": 79.6554,
+            "p(90)": 0
+        },
+        "http_req_waiting": {
+            "avg": 580.6904025403383,
+            "min": 5.1754,
+            "med": 53.2548,
+            "max": 26719.0409,
+            "p(90)": 1800.7641000000003,
+            "p(95)": 2058.37017
+        },
+        "vus_max": {
+            "min": 200,
+            "max": 2000,
+            "value": 2000
+        },
+        "checks": {
+            "fails": 179,
+            "passes": 115175,
+            "value": 0.9984482549369766
+        },
+        "vus": {
+            "max": 2000,
+            "value": 11,
+            "min": 0
+        },
+        "http_req_receiving": {
+            "avg": 0.0617710310623862,
+            "min": 0,
+            "med": 0,
+            "max": 53.3359,
+            "p(90)": 0.5047,
+            "p(95)": 0.5205
+        },
+        "order_status": {
+            "count": 19580,
+            "rate": 225.75700112959558
+        },
+        "http_req_duration": {
+            "max": 26719.0409,
+            "p(90)": 1800.81804,
+            "p(95)": 2058.40439,
+            "avg": 580.7727028702766,
+            "min": 5.1754,
+            "med": 53.4605,
+            "thresholds": {
+                "p(95)<2000": true
+            }
+        }
+    },
+    "setup_data": {
+        "hotCouponId": 1
+    }
+}

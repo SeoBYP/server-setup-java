@@ -1,0 +1,162 @@
+{
+    "metrics": {
+        "http_req_waiting": {
+            "p(95)": 1925.5861349999996,
+            "avg": 411.57675561208407,
+            "min": 4.3312,
+            "med": 28.239199999999997,
+            "max": 26585.034,
+            "p(90)": 1557.5409700000018
+        },
+        "http_req_failed": {
+            "passes": 160,
+            "fails": 74732,
+            "thresholds": {
+                "rate<0.05": false
+            },
+            "value": 0.002136409763392619
+        },
+        "data_sent": {
+            "count": 17479866,
+            "rate": 201807.28723942282
+        },
+        "claim_status": {
+            "count": 56100,
+            "rate": 647.6816706793759
+        },
+        "data_received": {
+            "count": 11566210,
+            "rate": 133533.37283829777
+        },
+        "http_reqs": {
+            "count": 74892,
+            "rate": 864.6377126652375
+        },
+        "vus": {
+            "value": 7,
+            "min": 0,
+            "max": 2000
+        },
+        "http_req_duration": {
+            "p(90)": 1557.929090000002,
+            "p(95)": 1925.5861349999996,
+            "avg": 411.65428394087667,
+            "min": 4.3312,
+            "med": 28.3461,
+            "max": 26585.559,
+            "thresholds": {
+                "p(95)<2000": false
+            }
+        },
+        "http_req_duration{expected_response:true}": {
+            "min": 4.3312,
+            "med": 28.1875,
+            "max": 26585.559,
+            "p(90)": 1545.8932500000003,
+            "p(95)": 1905.0685399999998,
+            "avg": 405.2296502783296
+        },
+        "order_status": {
+            "count": 18791,
+            "rate": 216.94449685804193
+        },
+        "http_req_connecting": {
+            "p(95)": 0,
+            "avg": 0.010706817817657404,
+            "min": 0,
+            "med": 0,
+            "max": 12.4391,
+            "p(90)": 0
+        },
+        "checks": {
+            "fails": 160,
+            "passes": 93522,
+            "value": 0.9982920945325676
+        },
+        "dropped_iterations": {
+            "count": 3901,
+            "rate": 45.0375436242468
+        },
+        "http_req_receiving": {
+            "min": 0,
+            "med": 0,
+            "max": 148.4119,
+            "p(90)": 0.5119,
+            "p(95)": 0.5196,
+            "avg": 0.06537082598942533
+        },
+        "iteration_duration": {
+            "min": 4.3312,
+            "med": 21.467399999999998,
+            "max": 6393.2066,
+            "p(90)": 2158.1376999999998,
+            "p(95)": 2647.9743,
+            "avg": 549.2637667878818
+        },
+        "http_req_sending": {
+            "avg": 0.012157502804037804,
+            "min": 0,
+            "med": 0,
+            "max": 35.0806,
+            "p(90)": 0,
+            "p(95)": 0
+        },
+        "vus_max": {
+            "value": 2000,
+            "min": 200,
+            "max": 2000
+        },
+        "http_req_blocked": {
+            "avg": 0.012696015595791253,
+            "min": 0,
+            "med": 0,
+            "max": 12.9546,
+            "p(90)": 0,
+            "p(95)": 0
+        },
+        "http_req_tls_handshaking": {
+            "med": 0,
+            "max": 0,
+            "p(90)": 0,
+            "p(95)": 0,
+            "avg": 0,
+            "min": 0
+        },
+        "iterations": {
+            "count": 56100,
+            "rate": 647.6816706793759
+        }
+    },
+    "setup_data": {
+        "hotCouponId": 1
+    },
+    "root_group": {
+        "checks": {
+            "claim is 200/409/410/403/504": {
+                "id": "f822021f4b5fbd331fbc95784f7f339e",
+                "passes": 56100,
+                "fails": 0,
+                "name": "claim is 200/409/410/403/504",
+                "path": "::claim is 200/409/410/403/504"
+            },
+            "claim has userCouponId": {
+                "passes": 18791,
+                "fails": 0,
+                "name": "claim has userCouponId",
+                "path": "::claim has userCouponId",
+                "id": "417267917c37799ea6f2c36df055277e"
+            },
+            "order is 201 or 409(insufficient balance)": {
+                "name": "order is 201 or 409(insufficient balance)",
+                "path": "::order is 201 or 409(insufficient balance)",
+                "id": "0bb4ba9dd2d94513e86f71224fc1d0e4",
+                "passes": 18631,
+                "fails": 160
+            }
+        },
+        "name": "",
+        "path": "",
+        "id": "d41d8cd98f00b204e9800998ecf8427e",
+        "groups": {}
+    }
+}
